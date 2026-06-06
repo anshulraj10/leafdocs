@@ -1,5 +1,5 @@
 """
-Tests for mdvault.
+Tests for leafdocs.
 
 Run with:
     pytest tests/ -v
@@ -9,7 +9,7 @@ import os
 import pathlib
 import pytest
 
-from mdvault import MDVault
+from leafdocs import LeafDocs
 
 
 # ---------------------------------------------------------------------------
@@ -36,20 +36,21 @@ def docs_dir(tmp_path):
 
 
 @pytest.fixture
-def open_app(docs_dir):
-    """MDVault with no auth."""
-    vault = MDVault(docs_dir=str(docs_dir), secret_key="test-secret")
+def open_app(docs_dir, monkeypatch):
+    monkeypatch.delenv("LEAFDOCS_PINS", raising=False)
+    monkeypatch.delenv("LEAFDOCS_SECRET_KEY", raising=False)
+    vault = LeafDocs(docs_dir=str(docs_dir), secret_key="test-secret")
     vault.flask_app.config["TESTING"] = True
     return vault.flask_app.test_client()
 
 
 @pytest.fixture
 def auth_app(docs_dir, monkeypatch):
-    """MDVault with a single pin set."""
-    monkeypatch.setenv("MDVAULT_PINS", "correctpin")
-    vault = MDVault(docs_dir=str(docs_dir), secret_key="test-secret")
-    vault.flask_app.config["TESTING"] = True
-    return vault.flask_app.test_client()
+    """LeafDocs with a single pin set."""
+    monkeypatch.setenv("LEAFDOCS_PINS", "correctpin")
+    app = LeafDocs(docs_dir=str(docs_dir), secret_key="test-secret")
+    app.flask_app.config["TESTING"] = True
+    return app.flask_app.test_client()
 
 
 # ---------------------------------------------------------------------------
@@ -190,21 +191,21 @@ class TestPathTraversal:
 class TestConstructor:
     def test_raises_on_missing_docs_dir(self, tmp_path):
         with pytest.raises(FileNotFoundError):
-            MDVault(docs_dir=str(tmp_path / "nonexistent"))
+            LeafDocs(docs_dir=str(tmp_path / "nonexistent"))
 
     def test_flask_app_is_accessible(self, docs_dir):
-        vault = MDVault(docs_dir=str(docs_dir), secret_key="test-secret")
+        app = LeafDocs(docs_dir=str(docs_dir), secret_key="test-secret")
         from flask import Flask
-        assert isinstance(vault.flask_app, Flask)
+        assert isinstance(app.flask_app, Flask)
 
     def test_custom_route_on_flask_app(self, docs_dir):
-        vault = MDVault(docs_dir=str(docs_dir), secret_key="test-secret")
+        app = LeafDocs(docs_dir=str(docs_dir), secret_key="test-secret")
 
-        @vault.flask_app.route("/health")
+        @app.flask_app.route("/health")
         def health():
             return {"status": "ok"}
 
-        client = vault.flask_app.test_client()
+        client = app.flask_app.test_client()
         r = client.get("/health")
         assert r.status_code == 200
         assert b"ok" in r.data

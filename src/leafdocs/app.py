@@ -21,8 +21,8 @@ load_dotenv()
 
 
 def _load_pins() -> list[bytes]:
-    """Read MDVAULT_PINS from env, hash each with bcrypt, return list of hashes."""
-    raw = os.getenv("MDVAULT_PINS", "").strip()
+    """Read LEAFDOCS_PINS from env, hash each with bcrypt, return list of hashes."""
+    raw = os.getenv("LEAFDOCS_PINS", "").strip()
     if not raw:
         return []
     pins = [p.strip() for p in raw.split(",") if p.strip()]
@@ -63,7 +63,7 @@ def _discover_docs(docs_dir: pathlib.Path) -> list[dict]:
     return docs
 
 
-class MDVault:
+class LeafDocs:
     def __init__(
         self,
         docs_dir: str = "./docs",
@@ -77,7 +77,7 @@ class MDVault:
         self._auth_enabled = bool(self._pin_hashes)
 
         self.flask_app = Flask(__name__)
-        self.flask_app.secret_key = secret_key or os.getenv("MDVAULT_SECRET_KEY") or secrets.token_hex(32)
+        self.flask_app.secret_key = secret_key or os.getenv("LEAFDOCS_SECRET_KEY") or secrets.token_hex(32)
 
         self._register_routes()
 
@@ -103,17 +103,17 @@ class MDVault:
         app = self.flask_app
 
         # Attach self so inner functions can reference it
-        vault = self
+        leafdocs = self
 
         @app.route("/login", methods=["GET", "POST"])
         def login():
-            if not vault._auth_enabled:
+            if not leafdocs._auth_enabled:
                 return redirect(url_for("index"))
 
             error = None
             if request.method == "POST":
                 pin = request.form.get("pin", "")
-                if _verify_pin(pin, vault._pin_hashes):
+                if _verify_pin(pin, leafdocs._pin_hashes):
                     session["authenticated"] = True
                     session.permanent = False
                     return redirect(url_for("index"))
@@ -128,26 +128,26 @@ class MDVault:
 
         @app.route("/")
         def index():
-            redir = vault._require_auth()
+            redir = leafdocs._require_auth()
             if redir:
                 return redir
-            docs = _discover_docs(vault.docs_dir)
-            return render_template("index.html", docs=docs, auth_enabled=vault._auth_enabled)
+            docs = _discover_docs(leafdocs.docs_dir)
+            return render_template("index.html", docs=docs, auth_enabled=leafdocs._auth_enabled)
 
         @app.route("/<slug>")
         def reader(slug: str):
-            redir = vault._require_auth()
+            redir = leafdocs._require_auth()
             if redir:
                 return redir
 
             # Find matching file
-            md_file = vault.docs_dir / f"{slug}.md"
+            md_file = leafdocs.docs_dir / f"{slug}.md"
             if not md_file.exists():
                 abort(404)
 
             # Security: ensure resolved path is still inside docs_dir
             try:
-                md_file.resolve().relative_to(vault.docs_dir)
+                md_file.resolve().relative_to(leafdocs.docs_dir)
             except ValueError:
                 abort(403)
 
@@ -167,7 +167,7 @@ class MDVault:
                 title=title,
                 tags=tags,
                 content=html_content,
-                auth_enabled=vault._auth_enabled,
+                auth_enabled=leafdocs._auth_enabled,
             )
 
     # ------------------------------------------------------------------

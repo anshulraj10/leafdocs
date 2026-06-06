@@ -5,20 +5,20 @@ tags: [guide, setup]
 
 # Getting Started
 
-Welcome to **MDVault** — a lightweight Markdown reader you can self-host anywhere.
+Welcome to **LeafDocs** — a lightweight Markdown reader you can self-host anywhere.
 
 ## Installation
 
 ```bash
-pip install mdvault
+pip install leafdocs
 ```
 
 ## Usage
 
 ```python
-from mdvault import MDVault
+from leafdocs import LeafDocs
 
-app = MDVault(docs_dir="./docs")
+app = LeafDocs(docs_dir="./docs")
 app.run()
 ```
 
@@ -45,7 +45,7 @@ tags: [python, tutorial]
 Access the underlying Flask app to add your own routes:
 
 ```python
-app = MDVault(docs_dir="./docs")
+app = LeafDocs(docs_dir="./docs")
 
 @app.flask_app.route("/health")
 def health():

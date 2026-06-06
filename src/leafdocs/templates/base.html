@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>{% block title %}MDVault{% endblock %}</title>
+  <title>{% block title %}LeafDocs{% endblock %}</title>
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -78,7 +78,7 @@
 </head>
 <body>
   <nav class="nav">
-    <a href="/" class="nav-brand">md<span>vault</span></a>
+    <a href="/" class="nav-brand">Leaf<span>Docs</span></a>
     <div class="nav-right">
       {% if auth_enabled is defined and auth_enabled %}
         <a href="/logout" class="nav-link">logout</a>

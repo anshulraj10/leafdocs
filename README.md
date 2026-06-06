@@ -1,14 +1,14 @@
-# mdvault# mdvault
+# leafdocs
 
 A lightweight Python library that turns a directory of Markdown files into a self-hosted, searchable web reader.
 
 Install it, point it at a folder, get a running Flask app you can deploy anywhere.
 
 ```python
-from mdvault import MDVault
+from leafdocs import LeafDocs
 
-app = MDVault(docs_dir="./docs")
-app.run()
+ld = LeafDocs(docs_dir="./docs")
+ld.run()
 ```
 
 ---
@@ -16,7 +16,7 @@ app.run()
 ## Installation
 
 ```bash
-pip install mdvault
+pip install leafdocs
 ```
 
 ---
@@ -26,10 +26,10 @@ pip install mdvault
 ### Minimal setup
 
 ```python
-from mdvault import MDVault
+from leafdocs import LeafDocs
 
-app = MDVault(docs_dir="./docs")
-app.run()
+ld = LeafDocs(docs_dir="./docs")
+ld.run()
 ```
 
 Visit `http://127.0.0.1:5000` — you'll see a searchable index of all `.md` files in your `docs/` directory.
@@ -43,16 +43,18 @@ Visit `http://127.0.0.1:5000` — you'll see a searchable index of all `.md` fil
 
 ### Accessing the Flask app
 
-The underlying Flask app is exposed as `app.flask_app`. Use it to add routes, middleware, or blueprints:
+The underlying Flask app is exposed as `ld.flask_app`. Use it to add routes, middleware, or blueprints:
 
 ```python
-app = MDVault(docs_dir="./docs")
+from leafdocs import LeafDocs
 
-@app.flask_app.route("/health")
+ld = LeafDocs(docs_dir="./docs")
+
+@ld.flask_app.route("/health")
 def health():
     return {"status": "ok"}
 
-app.run()
+ld.run()
 ```
 
 ---
@@ -84,7 +86,7 @@ By default the server runs open with no login required.
 To enable pin-based auth, add pins to a `.env` file in your working directory:
 
 ```
-MDVAULT_PINS=mypin123,anotherpin
+LEAFDOCS_PINS=mypin123,anotherpin
 ```
 
 Restart the server. All routes will now require a valid pin.
@@ -100,13 +102,13 @@ Restart the server. All routes will now require a valid pin.
 By default a random secret key is generated at startup, which means sessions are invalidated on every restart. For persistent sessions across restarts, set a stable key:
 
 ```
-MDVAULT_SECRET_KEY=your-long-random-secret-here
+LEAFDOCS_SECRET_KEY=your-long-random-secret-here
 ```
 
 Or pass it directly in code:
 
 ```python
-app = MDVault(docs_dir="./docs", secret_key="your-long-random-secret-here")
+ld = LeafDocs(docs_dir="./docs", secret_key="your-long-random-secret-here")
 ```
 
 Generate a good key with:
@@ -122,8 +124,8 @@ python -c "import secrets; print(secrets.token_hex(32))"
 All pins and the secret key are configured via `.env` only. Copy `.env.example` to `.env` to get started:
 
 ```
-MDVAULT_PINS=pin1,pin2
-MDVAULT_SECRET_KEY=your-secret-here
+LEAFDOCS_PINS=pin1,pin2
+LEAFDOCS_SECRET_KEY=your-secret-here
 ```
 
 ---
@@ -132,13 +134,13 @@ MDVAULT_SECRET_KEY=your-secret-here
 
 - **No caching** — Markdown is rendered on every request. Fine for personal or low-traffic use; not suitable for high-traffic production serving.
 - **No per-device session revocation** — rotating the pin invalidates all active sessions across all devices.
-- **No plugin system** — the primary extension hook is `app.flask_app`. Add routes and middleware directly on the Flask app.
+- **No plugin system** — the primary extension hook is `ld.flask_app`. Add routes and middleware directly on the Flask app.
 
 ---
 
 ## Deployment
 
-> **Disclaimer:** mdvault is a Flask application. Running it with `app.run()` uses Flask's built-in development server, which is not suitable for production. For production use, you are responsible for:
+> **Disclaimer:** leafdocs is a Flask application. Running it with `ld.run()` uses Flask's built-in development server, which is not suitable for production. For production use, you are responsible for:
 > - Running behind a production WSGI server (Gunicorn recommended)
 > - Terminating HTTPS at a reverse proxy (Nginx recommended)
 > - Managing the process with a supervisor (systemd recommended)
@@ -165,10 +167,10 @@ sudo apt update && sudo apt install -y python3-pip python3-venv nginx
 #### 3. Set up the app
 
 ```bash
-mkdir ~/mdvault-app && cd ~/mdvault-app
+mkdir ~/leafdocs-app && cd ~/leafdocs-app
 python3 -m venv .venv
 source .venv/bin/activate
-pip install mdvault gunicorn
+pip install leafdocs gunicorn
 ```
 
 Create your `docs/` directory and add your `.md` files:
@@ -180,17 +182,17 @@ mkdir docs
 Create `main.py`:
 
 ```python
-from mdvault import MDVault
+from leafdocs import LeafDocs
 
-vault = MDVault(docs_dir="./docs")
-app = vault.flask_app
+ld = LeafDocs(docs_dir="./docs")
+app = ld.flask_app
 ```
 
 Create `.env`:
 
 ```
-MDVAULT_PINS=yourpin
-MDVAULT_SECRET_KEY=your-long-random-secret-here
+LEAFDOCS_PINS=yourpin
+LEAFDOCS_SECRET_KEY=your-long-random-secret-here
 ```
 
 Test it runs:
@@ -201,18 +203,18 @@ gunicorn --bind 127.0.0.1:8000 main:app
 
 #### 4. Configure systemd
 
-Create `/etc/systemd/system/mdvault.service`:
+Create `/etc/systemd/system/leafdocs.service`:
 
 ```ini
 [Unit]
-Description=MDVault
+Description=LeafDocs
 After=network.target
 
 [Service]
 User=ubuntu
-WorkingDirectory=/home/ubuntu/mdvault-app
-Environment="PATH=/home/ubuntu/mdvault-app/.venv/bin"
-ExecStart=/home/ubuntu/mdvault-app/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 main:app
+WorkingDirectory=/home/ubuntu/leafdocs-app
+Environment="PATH=/home/ubuntu/leafdocs-app/.venv/bin"
+ExecStart=/home/ubuntu/leafdocs-app/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 main:app
 Restart=always
 
 [Install]
@@ -223,14 +225,14 @@ Enable and start:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable mdvault
-sudo systemctl start mdvault
-sudo systemctl status mdvault
+sudo systemctl enable leafdocs
+sudo systemctl start leafdocs
+sudo systemctl status leafdocs
 ```
 
 #### 5. Configure Nginx
 
-Create `/etc/nginx/sites-available/mdvault`:
+Create `/etc/nginx/sites-available/leafdocs`:
 
 ```nginx
 server {
@@ -250,7 +252,7 @@ server {
 Enable and reload:
 
 ```bash
-sudo ln -s /etc/nginx/sites-available/mdvault /etc/nginx/sites-enabled/
+sudo ln -s /etc/nginx/sites-available/leafdocs /etc/nginx/sites-enabled/
 sudo nginx -t
 sudo systemctl reload nginx
 ```
@@ -269,8 +271,8 @@ Certbot will automatically update your Nginx config and set up auto-renewal.
 ## Development
 
 ```bash
-git clone https://github.com/anshulraj10/mdvault
-cd mdvault
+git clone https://github.com/anshulraj10/leafdocs
+cd leafdocs
 python -m venv .venv
 source .venv/bin/activate
 pip install -e ".[dev]"

@@ -5,14 +5,14 @@ tags: [security, auth]
 
 # Authentication
 
-MDVault supports optional pin-based authentication.
+LeafDocs supports optional pin-based authentication.
 
 ## Setup
 
 Add pins to your `.env` file:
 
 ```
-MDVAULT_PINS=mypin123,anotherpin
+LEAFDOCS_PINS=mypin123,anotherpin
 ```
 
 Restart the server. All routes will now require a valid pin.
@@ -25,4 +25,4 @@ Restart the server. All routes will now require a valid pin.
 
 ## No Auth
 
-If `MDVAULT_PINS` is unset or empty, the server runs open — no login required.
+If `LEAFDOCS_PINS` is unset or empty, the server runs open — no login required.

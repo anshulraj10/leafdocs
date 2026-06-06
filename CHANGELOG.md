@@ -11,17 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- `MDVault` class — wraps a Flask app pointed at a directory of `.md` files
+- `LeafDocs` class — wraps a Flask app pointed at a directory of `.md` files
 - Auto-discovery of `.md` files on every request, no restart required
 - Searchable index at `/` with client-side filtering by title and tags
 - Individual document reader at `/<slug>` with Markdown rendered to HTML
 - YAML frontmatter support — `title` and `tags` fields, both optional
 - Filename fallback for title when frontmatter is absent
 - Tags rendered as visual labels on index and reader pages
-- Pin-based authentication via `MDVAULT_PINS` in `.env`
+- Pin-based authentication via `LEAFDOCS_PINS` in `.env`
 - Pins hashed with bcrypt at startup, never stored raw
 - Session cookie with `httponly` flag
-- `MDVAULT_SECRET_KEY` env var for stable sessions across restarts
+- `LEAFDOCS_SECRET_KEY` env var for stable sessions across restarts
 - Path traversal guard on the reader route
 - `app.flask_app` exposed for adding custom routes, middleware, and blueprints
 - Markdown extensions: fenced code blocks, tables, TOC, newline-to-break
