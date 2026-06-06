@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MDVault — Login</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f0f;
+      --surface: #181818;
+      --border: #2a2a2a;
+      --text: #e8e8e8;
+      --muted: #888;
+      --accent: #7c6af7;
+      --radius: 6px;
+    }
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .login-box {
+      width: 100%;
+      max-width: 360px;
+      padding: 2.5rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+    .login-brand {
+      font-size: 1.1rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      margin-bottom: 1.75rem;
+      color: var(--text);
+    }
+    .login-brand span { color: var(--accent); }
+
+    label {
+      display: block;
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 0.4rem;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    input[type="password"] {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 1rem;
+      padding: 0.65rem 0.85rem;
+      border-radius: var(--radius);
+      outline: none;
+      margin-bottom: 1.1rem;
+      transition: border-color 0.15s;
+    }
+    input[type="password"]:focus { border-color: var(--accent); }
+
+    .error {
+      font-size: 0.82rem;
+      color: #f87171;
+      margin-bottom: 0.85rem;
+    }
+
+    button {
+      width: 100%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 0.92rem;
+      font-weight: 600;
+      border: none;
+      padding: 0.7rem;
+      border-radius: var(--radius);
+      cursor: pointer;
+      transition: opacity 0.15s;
+    }
+    button:hover { opacity: 0.88; }
+  </style>
+</head>
+<body>
+  <div class="login-box">
+    <div class="login-brand">md<span>vault</span></div>
+    <form method="POST">
+      <label for="pin">Pin</label>
+      <input
+        type="password"
+        id="pin"
+        name="pin"
+        placeholder="Enter pin"
+        autofocus
+        autocomplete="current-password"
+      />
+      {% if error %}
+      <div class="error">{{ error }}</div>
+      {% endif %}
+      <button type="submit">Unlock</button>
+    </form>
+  </div>
+</body>
+</html>

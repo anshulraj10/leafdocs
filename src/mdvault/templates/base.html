@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{% block title %}MDVault{% endblock %}</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #0f0f0f;
+      --surface:   #181818;
+      --border:    #2a2a2a;
+      --text:      #e8e8e8;
+      --muted:     #888;
+      --accent:    #7c6af7;
+      --accent-dim:#3d3472;
+      --tag-bg:    #1e1e2e;
+      --tag-text:  #a89fec;
+      --radius:    6px;
+      --font-body: 'Georgia', serif;
+      --font-ui:   system-ui, -apple-system, sans-serif;
+    }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--font-ui);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    a { color: var(--accent); text-decoration: none; }
+    a:hover { text-decoration: underline; }
+
+    .nav {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 2rem;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .nav-brand {
+      font-weight: 700;
+      font-size: 1rem;
+      color: var(--text);
+      letter-spacing: 0.04em;
+    }
+    .nav-brand span { color: var(--accent); }
+    .nav-right { display: flex; gap: 1rem; align-items: center; }
+    .nav-link {
+      font-size: 0.82rem;
+      color: var(--muted);
+      transition: color 0.15s;
+    }
+    .nav-link:hover { color: var(--text); text-decoration: none; }
+
+    .container {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 2.5rem 1.5rem;
+    }
+
+    .tag {
+      display: inline-block;
+      background: var(--tag-bg);
+      color: var(--tag-text);
+      font-size: 0.72rem;
+      font-weight: 500;
+      padding: 0.15rem 0.55rem;
+      border-radius: 99px;
+      border: 1px solid var(--accent-dim);
+      letter-spacing: 0.03em;
+    }
+  </style>
+  {% block head %}{% endblock %}
+</head>
+<body>
+  <nav class="nav">
+    <a href="/" class="nav-brand">md<span>vault</span></a>
+    <div class="nav-right">
+      {% if auth_enabled is defined and auth_enabled %}
+        <a href="/logout" class="nav-link">logout</a>
+      {% endif %}
+      {% block nav_extra %}{% endblock %}
+    </div>
+  </nav>
+  <div class="container">
+    {% block content %}{% endblock %}
+  </div>
+</body>
+</html>

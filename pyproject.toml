@@ -1,0 +1,35 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mdvault"
+version = "0.1.0"
+description = "Turn a directory of Markdown files into a self-hosted, searchable web reader."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Anshul", email = "you@example.com" }]
+keywords = ["markdown", "docs", "flask", "self-hosted"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Framework :: Flask",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+]
+dependencies = [
+    "flask>=3.0",
+    "markdown>=3.5",
+    "python-frontmatter>=1.1",
+    "bcrypt>=4.1",
+    "python-dotenv>=1.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-flask"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"mdvault" = ["templates/**", "static/**"]
