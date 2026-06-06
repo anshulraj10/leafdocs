@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+
+{% block title %}LeafDocs — Index{% endblock %}
+
+{% block head %}
+<style>
+  .page-header {
+    margin-bottom: 2rem;
+  }
+  .page-header h1 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin-bottom: 0.4rem;
+    color: var(--text);
+  }
+  .page-header p {
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+
+  .search-wrap {
+    position: relative;
+    margin-bottom: 1.75rem;
+  }
+  .search-icon {
+    position: absolute;
+    left: 0.85rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--muted);
+    pointer-events: none;
+    font-size: 0.9rem;
+  }
+  #search {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: var(--font-ui);
+    font-size: 0.92rem;
+    padding: 0.65rem 1rem 0.65rem 2.4rem;
+    border-radius: var(--radius);
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #search:focus { border-color: var(--accent); }
+  #search::placeholder { color: var(--muted); }
+
+  #doc-list { list-style: none; }
+
+  .doc-item {
+    display: flex;
+    align-items: baseline;
+    gap: 0.75rem;
+    padding: 0.75rem 0;
+    border-bottom: 1px solid var(--border);
+    transition: background 0.1s;
+  }
+  .doc-item:last-child { border-bottom: none; }
+
+  .doc-title {
+    font-size: 0.95rem;
+    font-weight: 500;
+    color: var(--text);
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .doc-title:hover { color: var(--accent); text-decoration: none; }
+
+  .doc-tags { display: flex; gap: 0.4rem; flex-wrap: wrap; flex-shrink: 0; }
+
+  #empty-state {
+    display: none;
+    text-align: center;
+    padding: 3rem 0;
+    color: var(--muted);
+    font-size: 0.88rem;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Documents</h1>
+  <p>{{ docs | length }} file{{ 's' if docs | length != 1 else '' }}</p>
+</div>
+
+<div class="search-wrap">
+  <span class="search-icon">⌕</span>
+  <input
+    type="search"
+    id="search"
+    placeholder="Search by title or tag…"
+    autocomplete="off"
+    autofocus
+  />
+</div>
+
+<ul id="doc-list">
+  {% for doc in docs %}
+  <li
+    class="doc-item"
+    data-title="{{ doc.title | lower }}"
+    data-tags="{{ doc.tags | join(' ') | lower }}"
+  >
+    <a href="/{{ doc.slug }}" class="doc-title">{{ doc.title }}</a>
+    {% if doc.tags %}
+    <div class="doc-tags">
+      {% for tag in doc.tags %}
+      <span class="tag">{{ tag }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </li>
+  {% endfor %}
+</ul>
+
+<div id="empty-state">No documents match your search.</div>
+
+<script>
+  const input = document.getElementById('search');
+  const items = Array.from(document.querySelectorAll('.doc-item'));
+  const empty = document.getElementById('empty-state');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    let visible = 0;
+    items.forEach(item => {
+      const match = !q
+        || item.dataset.title.includes(q)
+        || item.dataset.tags.includes(q);
+      item.style.display = match ? '' : 'none';
+      if (match) visible++;
+    });
+    empty.style.display = visible === 0 ? 'block' : 'none';
+  });
+</script>
+{% endblock %}
