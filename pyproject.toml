@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "leafdocs"
-version = "0.1.0"
+version = "0.2.0"
 description = "Turn a directory of Markdown files into a self-hosted, searchable web reader."
 readme = "README.md"
 requires-python = ">=3.10"
