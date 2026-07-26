@@ -144,127 +144,14 @@ LEAFDOCS_SECRET_KEY=your-secret-here
 > - Running behind a production WSGI server (Gunicorn recommended)
 > - Terminating HTTPS at a reverse proxy (Nginx recommended)
 > - Managing the process with a supervisor (systemd recommended)
->
-> The instructions below cover a standard Nginx + Gunicorn + systemd setup.
 
-### AWS EC2 / GCP Compute Engine
+For full production setup on **AWS EC2** or **GCP Compute Engine** — Gunicorn + Nginx + systemd, raw-IP access, and two options for a custom domain (direct DNS + Certbot, or Cloudflare Tunnel for boxes without a public IPv4) — see **[DEPLOY.md](DEPLOY.md)**.
 
-The steps are identical for both — the only difference is how you provision the VM.
+---
 
-#### 1. Provision a VM
+## Claude Code skill
 
-- **AWS:** Launch an EC2 instance (Ubuntu 24.04 LTS, `t3.micro` or larger). Open ports 80 and 443 in the security group.
-- **GCP:** Create a Compute Engine instance (Ubuntu 24.04 LTS, `e2-micro` or larger). Open ports 80 and 443 in the firewall rules.
-
-SSH into the instance.
-
-#### 2. Install dependencies
-
-```bash
-sudo apt update && sudo apt install -y python3-pip python3-venv nginx
-```
-
-#### 3. Set up the app
-
-```bash
-mkdir ~/leafdocs-app && cd ~/leafdocs-app
-python3 -m venv .venv
-source .venv/bin/activate
-pip install leafdocs gunicorn
-```
-
-Create your `docs/` directory and add your `.md` files:
-
-```bash
-mkdir docs
-```
-
-Create `main.py`:
-
-```python
-from leafdocs import LeafDocs
-
-ld = LeafDocs(docs_dir="./docs")
-app = ld.flask_app
-```
-
-Create `.env`:
-
-```
-LEAFDOCS_PINS=yourpin
-LEAFDOCS_SECRET_KEY=your-long-random-secret-here
-```
-
-Test it runs:
-
-```bash
-gunicorn --bind 127.0.0.1:8000 main:app
-```
-
-#### 4. Configure systemd
-
-Create `/etc/systemd/system/leafdocs.service`:
-
-```ini
-[Unit]
-Description=LeafDocs
-After=network.target
-
-[Service]
-User=ubuntu
-WorkingDirectory=/home/ubuntu/leafdocs-app
-Environment="PATH=/home/ubuntu/leafdocs-app/.venv/bin"
-ExecStart=/home/ubuntu/leafdocs-app/.venv/bin/gunicorn --workers 2 --bind 127.0.0.1:8000 main:app
-Restart=always
-
-[Install]
-WantedBy=multi-user.target
-```
-
-Enable and start:
-
-```bash
-sudo systemctl daemon-reload
-sudo systemctl enable leafdocs
-sudo systemctl start leafdocs
-sudo systemctl status leafdocs
-```
-
-#### 5. Configure Nginx
-
-Create `/etc/nginx/sites-available/leafdocs`:
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://127.0.0.1:8000;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
-Enable and reload:
-
-```bash
-sudo ln -s /etc/nginx/sites-available/leafdocs /etc/nginx/sites-enabled/
-sudo nginx -t
-sudo systemctl reload nginx
-```
-
-#### 6. Enable HTTPS
-
-```bash
-sudo apt install -y certbot python3-certbot-nginx
-sudo certbot --nginx -d your-domain.com
-```
-
-Certbot will automatically update your Nginx config and set up auto-renewal.
+[`SKILL.md`](SKILL.md) is a [Claude Code](https://claude.com/claude-code) skill that generates Markdown files with the correct leafdocs frontmatter (`title`, `tags`) from raw notes or existing content, ready to drop into your `docs/` directory. Drop it into your Claude Code skills directory to use it.
 
 ---
 
