@@ -32,7 +32,7 @@ ld = LeafDocs(docs_dir="./docs")
 ld.run()
 ```
 
-Visit `http://127.0.0.1:5000` — you'll see a searchable index of all `.md` files in your `docs/` directory.
+Visit `http://127.0.0.1:5000` to see a searchable index of all `.md` files in your `docs/` directory, including subfolders.
 
 ### Constructor arguments
 
@@ -79,6 +79,56 @@ Frontmatter is optional — files without it are discovered and served normally.
 
 ---
 
+## Folders and images
+
+Subfolders under `docs_dir` are shown on the index as a collapsible tree, folders first, then docs. Folder names are titlecased the same way as filenames (`getting-started` becomes `Getting Started`). Folders with no `.md` files anywhere beneath them are left out. While the search box has text, matching docs are shown with their folders opened; clearing it restores the folders you had open.
+
+A doc's URL is its path relative to `docs_dir` without `.md`, so `docs/guides/setup.md` is served at `/guides/setup`. Links ending in `.md`, such as `/guides/setup.md`, redirect to the same URL without it.
+
+Skipped during discovery and returned as 404 by the reader:
+
+- Any file or folder whose name starts with `.`, such as `.git/`
+- Top-level `login.md`, `logout.md`, and anything under `static/`, since those paths belong to built-in routes. Nested files such as `guides/login.md` are fine.
+
+Symlinks that point outside `docs_dir` are not listed and return 403.
+
+Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) inside `docs_dir` are served at their path, behind the same login as the docs, so a doc can reference an image next to it with a relative path:
+
+```markdown
+![Diagram](diagram.png)
+```
+
+No other file types are served. SVG is excluded because it can carry scripts.
+
+---
+
+## Math and diagrams
+
+Docs can contain TeX math and [mermaid](https://mermaid.js.org) diagrams. Both are rendered in the browser by copies of [KaTeX](https://katex.org) and mermaid bundled with the package, so nothing is fetched from a CDN. Pages without math or diagrams load neither library.
+
+Inline math uses `\(...\)`. Single dollar signs are left alone so prices in prose render normally. Block math uses `$$...$$` or `\[...\]`:
+
+```markdown
+The area is \(\pi r^2\), and it costs $5.
+
+$$
+\int_0^1 x^2 \, dx = \frac{1}{3}
+$$
+```
+
+Diagrams are fenced code blocks tagged `mermaid`:
+
+````markdown
+```mermaid
+flowchart LR
+  Write --> Commit --> Read
+```
+````
+
+Mermaid runs with `securityLevel: "strict"`, so click handlers and raw HTML in diagram labels are disabled. Bundled versions and their licenses are listed in [`src/leafdocs/static/vendor/VERSIONS.md`](src/leafdocs/static/vendor/VERSIONS.md).
+
+---
+
 ## Authentication
 
 By default the server runs open with no login required.
@@ -93,7 +143,7 @@ Restart the server. All routes will now require a valid pin.
 
 **How it works:**
 - Pins are hashed with bcrypt at startup — raw values are never stored in memory
-- A successful login issues an `httponly` session cookie
+- A successful login issues a session cookie with `HttpOnly`, `SameSite=Lax`, and `Secure` (see `LEAFDOCS_COOKIE_SECURE` below)
 - Multiple pins are supported — useful for sharing access without a shared secret
 - To invalidate all sessions, rotate or remove the pin and restart
 
@@ -126,7 +176,16 @@ All pins and the secret key are configured via `.env` only. Copy `.env.example` 
 ```
 LEAFDOCS_PINS=pin1,pin2
 LEAFDOCS_SECRET_KEY=your-secret-here
+LEAFDOCS_COOKIE_SECURE=true
+LEAFDOCS_ALLOW_HTML=false
 ```
+
+| Variable                 | Default | Description |
+|--------------------------|---------|-------------|
+| `LEAFDOCS_PINS`          | unset   | Comma-separated pins. Unset or empty means no auth. |
+| `LEAFDOCS_SECRET_KEY`    | random  | Session signing key. Random means sessions reset on restart. |
+| `LEAFDOCS_COOKIE_SECURE` | `true`  | Sets the `Secure` flag on the session cookie. `false`, `0`, `no`, or `off` disables it. Disable only when serving over plain HTTP, such as local or raw-IP testing; browsers will not send a `Secure` cookie over HTTP, so login loops back to the login page. |
+| `LEAFDOCS_ALLOW_HTML`    | `false` | Skips HTML sanitizing of rendered Markdown. `true`, `1`, `yes`, or `on` enables it. Only safe when you are the sole author of all content. |
 
 ---
 
@@ -135,6 +194,7 @@ LEAFDOCS_SECRET_KEY=your-secret-here
 - **No caching** — Markdown is rendered on every request. Fine for personal or low-traffic use; not suitable for high-traffic production serving.
 - **No per-device session revocation** — rotating the pin invalidates all active sessions across all devices.
 - **No plugin system** — the primary extension hook is `ld.flask_app`. Add routes and middleware directly on the Flask app.
+- **Raw HTML in docs is sanitized** - rendered Markdown is passed through [nh3](https://github.com/messense/nh3) with an allowlist covering what the enabled extensions produce (headings with ids, lists, tables with alignment, code blocks with `language-*` classes, links, images, the `[TOC]` block, and `span` and `div` elements with class `arithmatex` for math). Scripts, event handler attributes, iframes, inline styles other than table alignment, and URL schemes other than `http`, `https`, and `mailto` are removed. Links get `rel="noopener noreferrer"`. Raw HTML outside the allowlist, such as `<details>`, is stripped, and `class` on `span` and `div` is removed unless it is exactly `arithmatex` (or `toc` on `div`). Set `LEAFDOCS_ALLOW_HTML=true` to turn sanitizing off; only do this when you are the sole author of all content.
 
 ---
 
@@ -165,6 +225,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
+
+`python main.py` runs a dev server on http://127.0.0.1:5000 (cookie Secure flag is off for plain http).
 
 ---
 

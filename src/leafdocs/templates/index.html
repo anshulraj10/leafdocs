@@ -46,7 +46,39 @@
   #search:focus { border-color: var(--accent); }
   #search::placeholder { color: var(--muted); }
 
-  #doc-list { list-style: none; }
+  .tree { list-style: none; }
+  .tree .tree {
+    margin-left: 0.4rem;
+    padding-left: 1.1rem;
+    border-left: 1px solid var(--border);
+  }
+
+  .folder-item { border-bottom: 1px solid var(--border); }
+  .folder-item:last-child { border-bottom: none; }
+
+  .folder > summary {
+    display: flex;
+    align-items: baseline;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+    cursor: pointer;
+    list-style: none;
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--muted);
+    transition: color 0.15s;
+  }
+  .folder > summary::-webkit-details-marker { display: none; }
+  .folder > summary::before {
+    content: "\25B8";
+    display: inline-block;
+    width: 0.8rem;
+    color: var(--accent);
+    transition: transform 0.15s;
+  }
+  .folder[open] > summary::before { transform: rotate(90deg); }
+  .folder > summary:hover { color: var(--text); }
+  .folder[open] > .tree { margin-bottom: 0.5rem; }
 
   .doc-item {
     display: flex;
@@ -93,18 +125,29 @@
   <input
     type="search"
     id="search"
-    placeholder="Search by title or tag…"
+    placeholder="Search by title, tag or path…"
     autocomplete="off"
     autofocus
   />
 </div>
 
-<ul id="doc-list">
-  {% for doc in docs %}
+{% macro render_node(node) %}
+  {% for folder in node.folders %}
+  <li class="folder-item">
+    <details class="folder">
+      <summary>{{ folder.title }}</summary>
+      <ul class="tree">
+        {{ render_node(folder) }}
+      </ul>
+    </details>
+  </li>
+  {% endfor %}
+  {% for doc in node.docs %}
   <li
     class="doc-item"
     data-title="{{ doc.title | lower }}"
     data-tags="{{ doc.tags | join(' ') | lower }}"
+    data-slug="{{ doc.slug | lower }}"
   >
     <a href="/{{ doc.slug }}" class="doc-title">{{ doc.title }}</a>
     {% if doc.tags %}
@@ -116,6 +159,10 @@
     {% endif %}
   </li>
   {% endfor %}
+{% endmacro %}
+
+<ul id="doc-list" class="tree">
+  {{ render_node(tree) }}
 </ul>
 
 <div id="empty-state">No documents match your search.</div>
@@ -123,19 +170,44 @@
 <script>
   const input = document.getElementById('search');
   const items = Array.from(document.querySelectorAll('.doc-item'));
+  const folders = Array.from(document.querySelectorAll('.folder'));
   const empty = document.getElementById('empty-state');
+
+  // Open/closed state of each folder from before the current filter started
+  let savedOpen = null;
 
   input.addEventListener('input', () => {
     const q = input.value.trim().toLowerCase();
-    let visible = 0;
+
+    if (!q) {
+      items.forEach(item => { item.style.display = ''; });
+      folders.forEach(folder => { folder.parentElement.style.display = ''; });
+      if (savedOpen) {
+        folders.forEach(folder => { folder.open = savedOpen.get(folder); });
+        savedOpen = null;
+      }
+      empty.style.display = 'none';
+      return;
+    }
+
+    if (!savedOpen) {
+      savedOpen = new Map(folders.map(folder => [folder, folder.open]));
+    }
+
+    const matches = new Set(items.filter(item =>
+      item.dataset.title.includes(q)
+      || item.dataset.tags.includes(q)
+      || item.dataset.slug.includes(q)
+    ));
     items.forEach(item => {
-      const match = !q
-        || item.dataset.title.includes(q)
-        || item.dataset.tags.includes(q);
-      item.style.display = match ? '' : 'none';
-      if (match) visible++;
+      item.style.display = matches.has(item) ? '' : 'none';
     });
-    empty.style.display = visible === 0 ? 'block' : 'none';
+    folders.forEach(folder => {
+      const hasMatch = Array.from(folder.querySelectorAll('.doc-item')).some(item => matches.has(item));
+      folder.parentElement.style.display = hasMatch ? '' : 'none';
+      folder.open = hasMatch;
+    });
+    empty.style.display = matches.size === 0 ? 'block' : 'none';
   });
 </script>
 {% endblock %}

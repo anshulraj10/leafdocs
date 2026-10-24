@@ -158,6 +158,14 @@ sudo nginx -t && sudo systemctl reload nginx
 
 Visit `http://<instance-ip>`. No HTTPS in this mode — fine for internal/testing use, not for anything pin-protected over an untrusted network (pins would go over plaintext HTTP).
 
+If pins are set, add this to `.env` and restart the service, or login will silently loop back to the login page:
+
+```
+LEAFDOCS_COOKIE_SECURE=false
+```
+
+The session cookie is marked `Secure` by default and browsers will not send it over plain HTTP. Remove this line once you move to Path A or Path B, which serve over HTTPS and need no change.
+
 ---
 
 ## 6. Path A — Domain via direct DNS + Certbot
