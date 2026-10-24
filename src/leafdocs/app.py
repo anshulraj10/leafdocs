@@ -1,11 +1,13 @@
 import os
 import pathlib
 import hashlib
+import re
 import secrets
 
 import bcrypt
 import frontmatter
 import markdown
+import nh3
 from dotenv import load_dotenv
 from flask import (
     Flask,
@@ -31,6 +33,48 @@ def _load_pins() -> list[bytes]:
 
 def _verify_pin(candidate: str, hashes: list[bytes]) -> bool:
     return any(bcrypt.checkpw(candidate.encode(), h) for h in hashes)
+
+
+# Everything the enabled Markdown extensions (fenced_code, tables, toc, nl2br) emit
+_ALLOWED_TAGS = {
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "br", "hr", "ul", "ol", "li", "blockquote", "pre", "code",
+    "table", "thead", "tbody", "tr", "th", "td",
+    "em", "strong", "del", "a", "img", "div",
+}
+_ALLOWED_ATTRIBUTES = {
+    **{h: {"id"} for h in ("h1", "h2", "h3", "h4", "h5", "h6")},
+    "a": {"href", "title"},
+    "img": {"src", "alt", "title"},
+    "code": {"class"},
+    "div": {"class"},
+    "th": {"style"},
+    "td": {"style"},
+}
+_LANGUAGE_CLASS = re.compile(r"language-[\w+#.-]+")
+
+
+def _filter_attribute(tag: str, attr: str, value: str) -> str | None:
+    """Restrict class values to what fenced_code (language-*) and toc (toc) produce."""
+    if attr == "class":
+        if tag == "code" and _LANGUAGE_CLASS.fullmatch(value):
+            return value
+        if tag == "div" and value == "toc":
+            return value
+        return None
+    return value
+
+
+def _sanitize(html: str) -> str:
+    return nh3.clean(
+        html,
+        tags=_ALLOWED_TAGS,
+        attributes=_ALLOWED_ATTRIBUTES,
+        attribute_filter=_filter_attribute,
+        filter_style_properties={"text-align"},
+        url_schemes={"http", "https", "mailto"},
+        link_rel="noopener noreferrer",
+    )
 
 
 def _slug(filepath: pathlib.Path) -> str:
@@ -78,6 +122,17 @@ class LeafDocs:
 
         self.flask_app = Flask(__name__)
         self.flask_app.secret_key = secret_key or os.getenv("LEAFDOCS_SECRET_KEY") or secrets.token_hex(32)
+
+        # Secure by default; only an explicit false-like value disables it (plain HTTP setups)
+        cookie_secure = os.getenv("LEAFDOCS_COOKIE_SECURE", "").strip().lower() not in ("false", "0", "no", "off")
+        self.flask_app.config.update(
+            SESSION_COOKIE_HTTPONLY=True,
+            SESSION_COOKIE_SECURE=cookie_secure,
+            SESSION_COOKIE_SAMESITE="Lax",
+        )
+
+        # Off by default; raw HTML in docs is only safe when every author is trusted
+        self._allow_html = os.getenv("LEAFDOCS_ALLOW_HTML", "").strip().lower() in ("true", "1", "yes", "on")
 
         self._register_routes()
 
@@ -161,6 +216,8 @@ class LeafDocs:
                 post.content,
                 extensions=["fenced_code", "tables", "toc", "nl2br"],
             )
+            if not leafdocs._allow_html:
+                html_content = _sanitize(html_content)
 
             return render_template(
                 "reader.html",

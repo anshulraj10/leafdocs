@@ -23,6 +23,7 @@ dependencies = [
     "python-frontmatter>=1.1",
     "bcrypt>=4.1",
     "python-dotenv>=1.0",
+    "nh3>=0.2.22",
 ]
 
 [project.optional-dependencies]

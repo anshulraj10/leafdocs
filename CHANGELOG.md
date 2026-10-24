@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [Unreleased]
+
+### Security
+
+- Session cookie now sets `Secure` and `SameSite=Lax` in addition to `HttpOnly`. Previously only `HttpOnly` was set.
+- Rendered Markdown in the reader view is now sanitized with `nh3` before being inserted into the page. Previously raw HTML in a doc, including `<script>` tags and event handler attributes, was served as-is. The allowlist keeps everything the enabled extensions produce. Raw HTML outside it is stripped.
+
+### Added
+
+- `LEAFDOCS_COOKIE_SECURE` env var, default `true`. Set to `false`, `0`, `no`, or `off` to drop the `Secure` flag when serving over plain HTTP. Deployments that use raw-IP HTTP access with pins must set it to `false`, or login will loop.
+- `LEAFDOCS_ALLOW_HTML` env var, default `false`. Set to `true`, `1`, `yes`, or `on` to skip sanitizing. Only safe when you are the sole author of all content.
+- `nh3` runtime dependency.
+
+### Fixed
+
+- `docs/authentication.md` claimed the session cookie was `secure` when it was not.
+
 ## [0.1.0] - 2026-06-06
 
 ### Added
