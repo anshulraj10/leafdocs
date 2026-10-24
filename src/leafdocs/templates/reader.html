@@ -3,6 +3,9 @@
 {% block title %}{{ title }} — LeafDocs{% endblock %}
 
 {% block head %}
+{% if has_math %}
+<link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
+{% endif %}
 <style>
   .reader-header {
     margin-bottom: 2.25rem;
@@ -128,6 +131,21 @@
     border-radius: var(--radius);
     margin: 1rem 0;
   }
+
+  .prose div.arithmatex {
+    overflow-x: auto;
+    margin: 0 0 1.1rem;
+  }
+
+  .prose pre.mermaid {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.1rem 1.25rem;
+    overflow-x: auto;
+    margin: 0 0 1.25rem;
+    text-align: center;
+  }
 </style>
 {% endblock %}
 
@@ -153,4 +171,15 @@
 <div class="prose">
   {{ content | safe }}
 </div>
+
+{% if has_math %}
+<script src="/static/vendor/katex/katex.min.js"></script>
+<script src="/static/vendor/katex/contrib/auto-render.min.js"></script>
+{% endif %}
+{% if has_mermaid %}
+<script src="/static/vendor/mermaid/mermaid.min.js"></script>
+{% endif %}
+{% if has_math or has_mermaid %}
+<script src="/static/reader-render.js"></script>
+{% endif %}
 {% endblock %}

@@ -612,3 +612,208 @@ class TestNestedDocs:
         r = client.get("/a/b/c")
         assert r.status_code == 200
         assert b"Deep body text." in r.data
+
+
+# ---------------------------------------------------------------------------
+# Math (arithmatex + KaTeX) and diagrams (mermaid)
+# ---------------------------------------------------------------------------
+
+KATEX_ASSETS = (
+    "/static/vendor/katex/katex.min.css",
+    "/static/vendor/katex/katex.min.js",
+    "/static/vendor/katex/contrib/auto-render.min.js",
+)
+MERMAID_ASSET = "/static/vendor/mermaid/mermaid.min.js"
+RENDER_ASSET = "/static/reader-render.js"
+
+MATH_DOC = r"""# Math
+
+Inline \(a_b + \alpha\) and \(c_d\).
+
+$$
+x_1 \\ y_2
+$$
+
+\[
+\frac{1}{2}
+\]
+"""
+
+MERMAID_DOC = """# Diagram
+
+```mermaid
+graph TD
+  A --> B
+```
+"""
+
+
+def _render_client(root, monkeypatch, allow_html=None):
+    """Client over root with every LEAFDOCS_* env var cleared, so a local .env cannot leak in."""
+    for var in ("LEAFDOCS_PINS", "LEAFDOCS_SECRET_KEY", "LEAFDOCS_COOKIE_SECURE", "LEAFDOCS_ALLOW_HTML"):
+        monkeypatch.delenv(var, raising=False)
+    if allow_html is not None:
+        monkeypatch.setenv("LEAFDOCS_ALLOW_HTML", allow_html)
+    app = LeafDocs(docs_dir=str(root), secret_key="test-secret")
+    app.flask_app.config["TESTING"] = True
+    return app.flask_app.test_client()
+
+
+class TestMathAndMermaid:
+    def test_inline_and_block_math_survive_sanitizing(self, tmp_path, monkeypatch):
+        _write(tmp_path, "math.md", MATH_DOC)
+        body = _render_client(tmp_path, monkeypatch).get("/math").data.decode()
+        assert r'<span class="arithmatex">\(a_b + \alpha\)</span>' in body
+        assert r'<span class="arithmatex">\(c_d\)</span>' in body
+        assert '<div class="arithmatex">\\[\nx_1 \\\\ y_2\n\\]</div>' in body
+        assert '<div class="arithmatex">\\[\n\\frac{1}{2}\n\\]</div>' in body
+
+    def test_less_than_in_math_does_not_break_page(self, tmp_path, monkeypatch):
+        _write(tmp_path, "lt.md", "Before \\(x<y\\) middle.\n\nAfter paragraph.\n")
+        r = _render_client(tmp_path, monkeypatch).get("/lt")
+        assert r.status_code == 200
+        body = r.data.decode()
+        assert r'<span class="arithmatex">\(x&lt;y\)</span>' in body
+        assert "<p>After paragraph.</p>" in body
+        assert body.rstrip().endswith("</html>")
+
+    @pytest.mark.parametrize(
+        "prose",
+        ["Inline $x$ here.", "costs $5 and $10", "$5-$10", "US$5, ($10)"],
+    )
+    def test_single_dollars_are_not_math(self, tmp_path, monkeypatch, prose):
+        _write(tmp_path, "dollars.md", prose + "\n")
+        body = _render_client(tmp_path, monkeypatch).get("/dollars").data.decode()
+        assert 'class="arithmatex"' not in body
+        assert f"<p>{prose}</p>" in body
+        assert "/static/vendor/katex/" not in body
+
+    def test_unclosed_double_dollar_is_not_math(self, tmp_path, monkeypatch):
+        _write(tmp_path, "dd.md", "The budget went from $$ to more.\n\nNext paragraph.\n")
+        body = _render_client(tmp_path, monkeypatch).get("/dd").data.decode()
+        assert 'class="arithmatex"' not in body
+        assert "<p>The budget went from $$ to more.</p>" in body
+        assert "<p>Next paragraph.</p>" in body
+
+    def test_mermaid_fence_emits_language_class(self, tmp_path, monkeypatch):
+        _write(tmp_path, "diagram.md", MERMAID_DOC)
+        body = _render_client(tmp_path, monkeypatch).get("/diagram").data.decode()
+        assert '<pre><code class="language-mermaid">graph TD\n  A --&gt; B\n</code></pre>' in body
+
+    def test_assets_loaded_only_when_needed(self, tmp_path, monkeypatch):
+        _write(tmp_path, "math.md", MATH_DOC)
+        _write(tmp_path, "diagram.md", MERMAID_DOC)
+        _write(tmp_path, "plain.md", "# Plain\n\nNo math, `class=\"arithmatex\"` only as code.\n")
+        client = _render_client(tmp_path, monkeypatch)
+
+        body = client.get("/math").data.decode()
+        for asset in KATEX_ASSETS + (RENDER_ASSET,):
+            assert asset in body
+        assert MERMAID_ASSET not in body
+
+        body = client.get("/diagram").data.decode()
+        assert MERMAID_ASSET in body
+        assert RENDER_ASSET in body
+        assert "/static/vendor/katex/" not in body
+
+        body = client.get("/plain").data.decode()
+        assert "/static/vendor/" not in body
+        assert RENDER_ASSET not in body
+
+        body = client.get("/").data.decode()
+        assert "/static/vendor/" not in body
+        assert RENDER_ASSET not in body
+
+    def test_render_script_loads_after_vendor_scripts(self, tmp_path, monkeypatch):
+        _write(tmp_path, "both.md", MATH_DOC + "\n" + MERMAID_DOC)
+        body = _render_client(tmp_path, monkeypatch).get("/both").data.decode()
+        render_at = body.index(RENDER_ASSET)
+        assert body.index("/static/vendor/katex/contrib/auto-render.min.js") < render_at
+        assert body.index(MERMAID_ASSET) < render_at
+
+    def test_payloads_in_math_are_escaped(self, tmp_path, monkeypatch):
+        _write(
+            tmp_path,
+            "evil.md",
+            "\\(<script>alert(1)</script>\\) and \\(<img src=x onerror=alert(2)>\\)\n\n"
+            "$$\n</div><script>alert(3)</script>\n$$\n",
+        )
+        body = _render_client(tmp_path, monkeypatch).get("/evil").data.decode()
+        assert "<script>alert" not in body
+        assert "<img src=x" not in body
+        assert r'<span class="arithmatex">\(&lt;script&gt;alert(1)&lt;/script&gt;\)</span>' in body
+
+    def test_payloads_in_mermaid_are_escaped(self, tmp_path, monkeypatch):
+        _write(
+            tmp_path,
+            "evil.md",
+            '```mermaid\ngraph TD\n  A["<img src=x onerror=alert(1)>"] --> B[<script>alert(2)</script>]\n```\n',
+        )
+        body = _render_client(tmp_path, monkeypatch).get("/evil").data.decode()
+        assert "<script>alert" not in body
+        assert "<img src=x" not in body
+        assert "&lt;img src=x onerror=alert(1)&gt;" in body
+
+    def test_class_restricted_to_arithmatex_on_span_and_div(self, tmp_path, monkeypatch):
+        _write(
+            tmp_path,
+            "attrs.md",
+            '<span class="arithmatex evil" onclick="x">s</span> <span class="evil">t</span>\n\n'
+            '<div class="overlay">d</div>\n',
+        )
+        body = _render_client(tmp_path, monkeypatch).get("/attrs").data.decode()
+        assert "evil" not in body
+        assert "overlay" not in body
+        assert "onclick" not in body
+        assert "<span>s</span>" in body
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ('<span onclick="x()">click</span>', "<span>click</span>"),
+            ('<span style="color:red">styled</span>', "<span>styled</span>"),
+            ('<span class="arithmatex evil">mixed</span>', "<span>mixed</span>"),
+            ('<div class="toc">t</div>', '<div class="toc">t</div>'),
+            ('<div class="arithmatex">a</div>', '<div class="arithmatex">a</div>'),
+            ('<div class="other">o</div>', "<div>o</div>"),
+        ],
+    )
+    def test_raw_span_and_div_attributes(self, tmp_path, monkeypatch, raw, expected):
+        _write(tmp_path, "raw.md", raw + "\n")
+        body = _render_client(tmp_path, monkeypatch).get("/raw").data.decode()
+        prose = body[body.index('<div class="prose">'):]
+        assert expected in prose
+        for leftover in ("onclick", "style=", "evil", "other"):
+            assert leftover not in prose
+
+    def test_allow_html_still_skips_sanitizing(self, tmp_path, monkeypatch):
+        _write(tmp_path, "mixed.md", "\\(a_b\\)\n\n<script>alert('x')</script>\n")
+        body = _render_client(tmp_path, monkeypatch, allow_html="true").get("/mixed").data.decode()
+        assert r'<span class="arithmatex">\(a_b\)</span>' in body
+        assert "<script>alert('x')</script>" in body
+
+    @pytest.mark.parametrize(
+        "path, mimetype",
+        [
+            ("/static/vendor/katex/katex.min.css", "text/css"),
+            ("/static/vendor/katex/katex.min.js", "text/javascript"),
+            ("/static/vendor/katex/contrib/auto-render.min.js", "text/javascript"),
+            ("/static/vendor/katex/fonts/KaTeX_Main-Regular.woff2", "font/woff2"),
+            ("/static/vendor/mermaid/mermaid.min.js", "text/javascript"),
+            ("/static/reader-render.js", "text/javascript"),
+        ],
+    )
+    def test_vendored_files_served(self, tmp_path, monkeypatch, path, mimetype):
+        r = _render_client(tmp_path, monkeypatch).get(path)
+        assert r.status_code == 200
+        assert r.mimetype == mimetype
+        assert len(r.data) > 0
+        r.close()
+
+    def test_katex_css_only_references_woff2(self, tmp_path, monkeypatch):
+        r = _render_client(tmp_path, monkeypatch).get("/static/vendor/katex/katex.min.css")
+        css = r.data.decode()
+        r.close()
+        assert "url(fonts/" in css
+        assert 'format("woff")' not in css
+        assert "truetype" not in css
