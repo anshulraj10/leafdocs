@@ -371,3 +371,244 @@ class TestConstructor:
         r = client.get("/health")
         assert r.status_code == 200
         assert b"ok" in r.data
+
+# ---------------------------------------------------------------------------
+# Nested folders
+# ---------------------------------------------------------------------------
+
+# 1x1 transparent PNG
+PNG_BYTES = bytes.fromhex(
+    "89504e470d0a1a0a0000000d4948445200000001000000010806000000"
+    "1f15c4890000000d49444154789c6360000002000154a24f5d0000000049454e44ae426082"
+)
+
+
+def _write(root, rel, content):
+    path = root / rel
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if isinstance(content, bytes):
+        path.write_bytes(content)
+    else:
+        path.write_text(content)
+    return path
+
+
+def _nested_client(root, monkeypatch, pins=None):
+    """Client for a LeafDocs app over root. Clears every LEAFDOCS_* env var so a local .env cannot leak in."""
+    for var in ("LEAFDOCS_PINS", "LEAFDOCS_SECRET_KEY", "LEAFDOCS_COOKIE_SECURE", "LEAFDOCS_ALLOW_HTML"):
+        monkeypatch.delenv(var, raising=False)
+    if pins is not None:
+        monkeypatch.setenv("LEAFDOCS_PINS", pins)
+    app = LeafDocs(docs_dir=str(root), secret_key="test-secret")
+    app.flask_app.config["TESTING"] = True
+    return app.flask_app.test_client()
+
+
+class TestNestedDocs:
+    def test_nested_doc_listed_and_readable(self, tmp_path, monkeypatch):
+        _write(tmp_path, "a/b/c.md", "---\ntitle: Deep Doc\n---\n\nDeep body text.")
+        client = _nested_client(tmp_path, monkeypatch)
+
+        body = client.get("/").data.decode()
+        assert "Deep Doc" in body
+        assert 'href="/a/b/c"' in body
+
+        r = client.get("/a/b/c")
+        assert r.status_code == 200
+        body = r.data.decode()
+        assert "Deep Doc" in body
+        assert "Deep body text." in body
+        # Breadcrumb: Docs links home, folders are plain text
+        assert '<a href="/">Docs</a>' in body
+        assert body.index("<span>A</span>") < body.index("<span>B</span>")
+
+    def test_nested_title_and_tag_fallbacks(self, tmp_path, monkeypatch):
+        _write(tmp_path, "a/b/my-nested_doc.md", "No frontmatter here.")
+        _write(tmp_path, "a/tagged.md", "---\ntags: alpha, beta\n---\n\nTagged.")
+        client = _nested_client(tmp_path, monkeypatch)
+
+        body = client.get("/").data.decode()
+        assert "My Nested Doc" in body
+        assert "Tagged" in body
+        assert '<span class="tag">alpha</span>' in body
+        assert '<span class="tag">beta</span>' in body
+
+        body = client.get("/a/b/my-nested_doc").data.decode()
+        assert "My Nested Doc" in body
+        body = client.get("/a/tagged").data.decode()
+        assert '<span class="tag">alpha</span>' in body
+        assert '<span class="tag">beta</span>' in body
+
+    def test_tree_ordering_folders_first_case_insensitive(self, tmp_path, monkeypatch):
+        # Case-sensitive sorting would put "Beta" before "alpha" and "Cherry" before "banana"
+        _write(tmp_path, "Beta/one.md", "x")
+        _write(tmp_path, "alpha/two.md", "x")
+        _write(tmp_path, "c.md", "---\ntitle: Cherry\n---\n")
+        _write(tmp_path, "b.md", "---\ntitle: banana\n---\n")
+        _write(tmp_path, "a.md", "---\ntitle: Aardvark\n---\n")
+        body = _nested_client(tmp_path, monkeypatch).get("/").data.decode()
+
+        order = [
+            body.index("<summary>Alpha</summary>"),
+            body.index("<summary>Beta</summary>"),
+            body.index(">Aardvark</a>"),
+            body.index(">banana</a>"),
+            body.index(">Cherry</a>"),
+        ]
+        assert order == sorted(order)
+
+    def test_folders_are_collapsed_by_default(self, tmp_path, monkeypatch):
+        _write(tmp_path, "guides/setup.md", "x")
+        body = _nested_client(tmp_path, monkeypatch).get("/").data.decode()
+        assert '<details class="folder">' in body
+        assert "<details class=\"folder\" open" not in body
+
+    def test_empty_and_non_md_folders_hidden(self, tmp_path, monkeypatch):
+        (tmp_path / "empty" / "deeper").mkdir(parents=True)
+        _write(tmp_path, "assets/only.png", PNG_BYTES)
+        _write(tmp_path, "assets/notes.txt", "not markdown")
+        _write(tmp_path, "real/doc.md", "x")
+        body = _nested_client(tmp_path, monkeypatch).get("/").data.decode()
+        assert "<summary>Real</summary>" in body
+        assert "<summary>Empty</summary>" not in body
+        assert "<summary>Deeper</summary>" not in body
+        assert "<summary>Assets</summary>" not in body
+
+    def test_hidden_directory_not_listed_and_404(self, tmp_path, monkeypatch):
+        _write(tmp_path, ".git/x.md", "---\ntitle: Hidden Secret\n---\n")
+        _write(tmp_path, "docs/.draft.md", "---\ntitle: Hidden Draft\n---\n")
+        _write(tmp_path, "visible.md", "x")
+        client = _nested_client(tmp_path, monkeypatch)
+
+        body = client.get("/").data.decode()
+        assert "Hidden Secret" not in body
+        assert "Hidden Draft" not in body
+        assert "<summary>.Git</summary>" not in body
+        assert client.get("/.git/x").status_code == 404
+        assert client.get("/docs/.draft").status_code == 404
+
+    def test_symlink_escape_not_listed_and_403(self, tmp_path, monkeypatch):
+        outside = _write(tmp_path, "outside/secret.md", "---\ntitle: Outside Secret\n---\n\nTop secret.")
+        docs = tmp_path / "docs"
+        docs.mkdir()
+        (docs / "link.md").symlink_to(outside)
+        _write(docs, "visible.md", "x")
+        client = _nested_client(docs, monkeypatch)
+
+        body = client.get("/").data.decode()
+        assert "Outside Secret" not in body
+        r = client.get("/link")
+        assert r.status_code == 403
+        assert b"Top secret." not in r.data
+
+    def test_symlinked_dir_inside_docs_not_duplicated(self, tmp_path, monkeypatch):
+        _write(tmp_path, "a/real/one.md", "---\ntitle: Real One\n---\n")
+        _write(tmp_path, "b/two.md", "---\ntitle: Real Two\n---\n")
+        (tmp_path / "b" / "linked").symlink_to(tmp_path / "a" / "real", target_is_directory=True)
+        body = _nested_client(tmp_path, monkeypatch).get("/").data.decode()
+
+        assert body.count(">Real One</a>") == 1
+        assert body.count(">Real Two</a>") == 1
+        assert body.count('class="doc-title"') == 2
+        assert 'href="/a/real/one"' in body
+        assert "/b/linked/" not in body
+        assert "<summary>Linked</summary>" not in body
+
+    def test_symlink_loop_does_not_hang(self, tmp_path, monkeypatch):
+        import threading
+
+        _write(tmp_path, "one.md", "---\ntitle: Only One\n---\n")
+        _write(tmp_path, "sub/two.md", "---\ntitle: Only Two\n---\n")
+        (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
+        client = _nested_client(tmp_path, monkeypatch)
+
+        # Run in a thread so a regression fails the test instead of hanging the suite
+        result = {}
+        worker = threading.Thread(target=lambda: result.update(r=client.get("/")), daemon=True)
+        worker.start()
+        worker.join(timeout=10)
+        assert not worker.is_alive(), "index request hung on a symlink loop"
+
+        r = result["r"]
+        assert r.status_code == 200
+        body = r.data.decode()
+        assert body.count(">Only One</a>") == 1
+        assert body.count(">Only Two</a>") == 1
+        assert body.count('class="doc-title"') == 2
+        assert "/loop/" not in body
+        assert "<summary>Loop</summary>" not in body
+
+    def test_reserved_top_level_slugs(self, tmp_path, monkeypatch):
+        _write(tmp_path, "login.md", "---\ntitle: Top Login\n---\n")
+        _write(tmp_path, "logout.md", "---\ntitle: Top Logout\n---\n")
+        _write(tmp_path, "guides/login.md", "---\ntitle: Guides Login\n---\n\nNested login doc.")
+        client = _nested_client(tmp_path, monkeypatch)
+
+        body = client.get("/").data.decode()
+        assert "Top Login" not in body
+        assert "Top Logout" not in body
+        assert "Guides Login" in body
+
+        r = client.get("/guides/login")
+        assert r.status_code == 200
+        assert b"Nested login doc." in r.data
+        # The built-in route still wins (open server redirects to index)
+        r = client.get("/login")
+        assert r.status_code == 302
+        assert r.headers["Location"].endswith("/")
+
+    def test_static_folder_not_listed(self, tmp_path, monkeypatch):
+        _write(tmp_path, "static/x.md", "---\ntitle: Static Doc\n---\n")
+        _write(tmp_path, "visible.md", "x")
+        body = _nested_client(tmp_path, monkeypatch).get("/").data.decode()
+        assert "Static Doc" not in body
+        assert "<summary>Static</summary>" not in body
+
+    def test_md_suffix_redirects(self, tmp_path, monkeypatch):
+        _write(tmp_path, "guides/setup.md", "x")
+        r = _nested_client(tmp_path, monkeypatch).get("/guides/setup.md")
+        assert r.status_code == 302
+        assert r.headers["Location"].endswith("/guides/setup")
+
+    def test_image_served_when_authenticated(self, tmp_path, monkeypatch):
+        _write(tmp_path, "guides/img/pic.png", PNG_BYTES)
+        client = _nested_client(tmp_path, monkeypatch, pins="correctpin")
+        client.post("/login", data={"pin": "correctpin"})
+        r = client.get("/guides/img/pic.png")
+        assert r.status_code == 200
+        assert r.mimetype == "image/png"
+        assert r.data == PNG_BYTES
+
+    def test_image_redirects_to_login_when_unauthenticated(self, tmp_path, monkeypatch):
+        _write(tmp_path, "guides/img/pic.png", PNG_BYTES)
+        r = _nested_client(tmp_path, monkeypatch, pins="correctpin").get("/guides/img/pic.png")
+        assert r.status_code == 302
+        assert "login" in r.headers["Location"]
+
+    def test_other_file_types_not_served(self, tmp_path, monkeypatch):
+        _write(tmp_path, "guides/notes.txt", "plain text")
+        _write(tmp_path, "guides/logo.svg", '<svg xmlns="http://www.w3.org/2000/svg"></svg>')
+        client = _nested_client(tmp_path, monkeypatch)
+        assert client.get("/guides/notes.txt").status_code == 404
+        assert client.get("/guides/logo.svg").status_code == 404
+
+    def test_image_traversal_rejected(self, tmp_path, monkeypatch):
+        _write(tmp_path, "secret.png", PNG_BYTES)
+        docs = tmp_path / "docs"
+        _write(docs, "guides/img/pic.png", PNG_BYTES)
+        r = _nested_client(docs, monkeypatch).get("/guides/../../secret.png")
+        assert r.status_code == 404
+
+    def test_auth_enforced_on_nested_docs(self, tmp_path, monkeypatch):
+        _write(tmp_path, "a/b/c.md", "Deep body text.")
+        client = _nested_client(tmp_path, monkeypatch, pins="correctpin")
+
+        for url in ("/a/b/c", "/a/b/c.md"):
+            r = client.get(url)
+            assert r.status_code == 302
+            assert "login" in r.headers["Location"]
+
+        client.post("/login", data={"pin": "correctpin"})
+        r = client.get("/a/b/c")
+        assert r.status_code == 200
+        assert b"Deep body text." in r.data

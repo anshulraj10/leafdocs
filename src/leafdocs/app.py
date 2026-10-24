@@ -15,6 +15,7 @@ from flask import (
     redirect,
     render_template,
     request,
+    send_file,
     session,
     url_for,
 )
@@ -77,27 +78,69 @@ def _sanitize(html: str) -> str:
     )
 
 
-def _slug(filepath: pathlib.Path) -> str:
-    """Convert a .md filepath to its URL slug (stem only)."""
-    return filepath.stem
+_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+# Top-level slugs that would collide with built-in routes
+_RESERVED_SLUGS = {"login", "logout"}
+
+
+def _slug(filepath: pathlib.Path, docs_dir: pathlib.Path) -> str:
+    """Convert a .md filepath to its URL slug (posix path relative to docs_dir, no .md)."""
+    return filepath.relative_to(docs_dir).with_suffix("").as_posix()
+
+
+def _display_name(name: str) -> str:
+    """Titlecase a file stem or directory name, treating - and _ as spaces."""
+    return name.replace("-", " ").replace("_", " ").title()
+
+
+def _doc_meta(post: frontmatter.Post, md_file: pathlib.Path) -> tuple[str, list[str]]:
+    """Return (title, tags) from frontmatter, falling back to the filename for title."""
+    title = post.get("title") or _display_name(md_file.stem)
+    tags = post.get("tags") or []
+    if isinstance(tags, str):
+        tags = [t.strip() for t in tags.split(",")]
+    return title, tags
+
+
+def _is_hidden(rel: pathlib.PurePath) -> bool:
+    return any(part.startswith(".") for part in rel.parts)
+
+
+def _is_reserved(slug: str) -> bool:
+    return slug in _RESERVED_SLUGS or slug.startswith("static/")
+
+
+def _is_inside(path: pathlib.Path, docs_dir: pathlib.Path) -> bool:
+    """True if path, with symlinks resolved, is still inside docs_dir."""
+    try:
+        path.resolve().relative_to(docs_dir)
+    except ValueError:
+        return False
+    return True
 
 
 def _discover_docs(docs_dir: pathlib.Path) -> list[dict]:
     """
-    Scan docs_dir for .md files. Return list of dicts with:
+    Recursively scan docs_dir for .md files. Return list of dicts with:
       slug, title, tags, path
-    Sorted alphabetically by title.
+    Sorted alphabetically by title. Hidden paths, symlinks that escape
+    docs_dir, and reserved slugs are skipped.
     """
     docs = []
-    for md_file in sorted(docs_dir.glob("*.md")):
+    for md_file in sorted(docs_dir.rglob("*.md")):
+        if _is_hidden(md_file.relative_to(docs_dir)):
+            continue
+        if not md_file.is_file() or not _is_inside(md_file, docs_dir):
+            continue
+        slug = _slug(md_file, docs_dir)
+        if _is_reserved(slug):
+            continue
         post = frontmatter.load(str(md_file))
-        title = post.get("title") or md_file.stem.replace("-", " ").replace("_", " ").title()
-        tags = post.get("tags") or []
-        if isinstance(tags, str):
-            tags = [t.strip() for t in tags.split(",")]
+        title, tags = _doc_meta(post, md_file)
         docs.append(
             {
-                "slug": _slug(md_file),
+                "slug": slug,
                 "title": title,
                 "tags": tags,
                 "path": md_file,
@@ -105,6 +148,31 @@ def _discover_docs(docs_dir: pathlib.Path) -> list[dict]:
         )
     docs.sort(key=lambda d: d["title"].lower())
     return docs
+
+
+def _build_tree(docs: list[dict]) -> dict:
+    """
+    Group docs into nested folders by slug. Each node has:
+      name, title, folders, docs
+    Folders come sorted by name and docs by title, both case-insensitive.
+    Only folders that hold docs somewhere beneath them exist.
+    """
+    def new_node(name: str) -> dict:
+        return {"name": name, "title": _display_name(name), "folders": {}, "docs": []}
+
+    root = new_node("")
+    for doc in docs:
+        node = root
+        for part in doc["slug"].split("/")[:-1]:
+            node = node["folders"].setdefault(part, new_node(part))
+        node["docs"].append(doc)
+
+    def finish(node: dict) -> dict:
+        node["folders"] = [finish(f) for f in sorted(node["folders"].values(), key=lambda f: f["name"].lower())]
+        node["docs"].sort(key=lambda d: d["title"].lower())
+        return node
+
+    return finish(root)
 
 
 class LeafDocs:
@@ -150,6 +218,18 @@ class LeafDocs:
             return redirect(url_for("login"))
         return None
 
+    def _serve_image(self, slug: str):
+        """Serve an image file from docs_dir. Caller has already checked auth."""
+        rel = pathlib.PurePosixPath(slug)
+        if _is_hidden(rel):
+            abort(404)
+        image = self.docs_dir / rel
+        if not image.is_file():
+            abort(404)
+        if not _is_inside(image, self.docs_dir):
+            abort(403)
+        return send_file(image.resolve())
+
     # ------------------------------------------------------------------
     # Route registration
     # ------------------------------------------------------------------
@@ -187,30 +267,44 @@ class LeafDocs:
             if redir:
                 return redir
             docs = _discover_docs(leafdocs.docs_dir)
-            return render_template("index.html", docs=docs, auth_enabled=leafdocs._auth_enabled)
+            return render_template(
+                "index.html",
+                docs=docs,
+                tree=_build_tree(docs),
+                auth_enabled=leafdocs._auth_enabled,
+            )
 
-        @app.route("/<slug>")
+        @app.route("/<path:slug>")
         def reader(slug: str):
             redir = leafdocs._require_auth()
             if redir:
                 return redir
 
+            # Old-style links to the .md file land on the doc itself
+            if slug.endswith(".md"):
+                if not slug[:-3]:
+                    abort(404)
+                return redirect(url_for("reader", slug=slug[:-3]))
+
+            if pathlib.PurePosixPath(slug).suffix.lower() in _IMAGE_SUFFIXES:
+                return leafdocs._serve_image(slug)
+
+            rel = pathlib.PurePosixPath(f"{slug}.md")
+            if _is_hidden(rel) or _is_reserved(rel.as_posix()[:-3]):
+                abort(404)
+
             # Find matching file
-            md_file = leafdocs.docs_dir / f"{slug}.md"
-            if not md_file.exists():
+            md_file = leafdocs.docs_dir / rel
+            if not md_file.is_file():
                 abort(404)
 
             # Security: ensure resolved path is still inside docs_dir
-            try:
-                md_file.resolve().relative_to(leafdocs.docs_dir)
-            except ValueError:
+            if not _is_inside(md_file, leafdocs.docs_dir):
                 abort(403)
 
             post = frontmatter.load(str(md_file))
-            title = post.get("title") or md_file.stem.replace("-", " ").replace("_", " ").title()
-            tags = post.get("tags") or []
-            if isinstance(tags, str):
-                tags = [t.strip() for t in tags.split(",")]
+            title, tags = _doc_meta(post, md_file)
+            crumbs = [_display_name(part) for part in rel.parts[:-1]]
 
             html_content = markdown.markdown(
                 post.content,
@@ -223,6 +317,7 @@ class LeafDocs:
                 "reader.html",
                 title=title,
                 tags=tags,
+                crumbs=crumbs,
                 content=html_content,
                 auth_enabled=leafdocs._auth_enabled,
             )

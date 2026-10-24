@@ -32,7 +32,7 @@ ld = LeafDocs(docs_dir="./docs")
 ld.run()
 ```
 
-Visit `http://127.0.0.1:5000` — you'll see a searchable index of all `.md` files in your `docs/` directory.
+Visit `http://127.0.0.1:5000` to see a searchable index of all `.md` files in your `docs/` directory, including subfolders.
 
 ### Constructor arguments
 
@@ -76,6 +76,29 @@ tags: [python, tutorial]
 | `tags`  | list or comma-separated string | None                 |
 
 Frontmatter is optional — files without it are discovered and served normally.
+
+---
+
+## Folders and images
+
+Subfolders under `docs_dir` are shown on the index as a collapsible tree, folders first, then docs. Folder names are titlecased the same way as filenames (`getting-started` becomes `Getting Started`). Folders with no `.md` files anywhere beneath them are left out. While the search box has text, matching docs are shown with their folders opened; clearing it restores the folders you had open.
+
+A doc's URL is its path relative to `docs_dir` without `.md`, so `docs/guides/setup.md` is served at `/guides/setup`. Links ending in `.md`, such as `/guides/setup.md`, redirect to the same URL without it.
+
+Skipped during discovery and returned as 404 by the reader:
+
+- Any file or folder whose name starts with `.`, such as `.git/`
+- Top-level `login.md`, `logout.md`, and anything under `static/`, since those paths belong to built-in routes. Nested files such as `guides/login.md` are fine.
+
+Symlinks that point outside `docs_dir` are not listed and return 403.
+
+Images (`.png`, `.jpg`, `.jpeg`, `.gif`, `.webp`) inside `docs_dir` are served at their path, behind the same login as the docs, so a doc can reference an image next to it with a relative path:
+
+```markdown
+![Diagram](diagram.png)
+```
+
+No other file types are served. SVG is excluded because it can carry scripts.
 
 ---
 
@@ -175,6 +198,8 @@ source .venv/bin/activate
 pip install -e ".[dev]"
 pytest tests/ -v
 ```
+
+`python main.py` runs a dev server on http://127.0.0.1:5000 (cookie Secure flag is off for plain http).
 
 ---
 
