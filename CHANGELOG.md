@@ -19,6 +19,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `LEAFDOCS_COOKIE_SECURE` env var, default `true`. Set to `false`, `0`, `no`, or `off` to drop the `Secure` flag when serving over plain HTTP. Deployments that use raw-IP HTTP access with pins must set it to `false`, or login will loop.
 - `LEAFDOCS_ALLOW_HTML` env var, default `false`. Set to `true`, `1`, `yes`, or `on` to skip sanitizing. Only safe when you are the sole author of all content.
 - `nh3` runtime dependency.
+- Nested folders. Docs are discovered recursively under `docs_dir`, and the index shows them as a collapsible folder tree. Folders with no docs beneath them are omitted.
+- Search on the index also matches the doc path, and opens the folders that hold matches.
+- Image route. `.png`, `.jpg`, `.jpeg`, `.gif`, and `.webp` files inside `docs_dir` are served at their path, behind the same auth check and path guard as docs.
+- Sample nested docs under `docs/guides/`.
+
+### Changed
+
+- The reader route is now `/<path:slug>`, where the slug is the path relative to `docs_dir` without `.md`. Top-level docs keep their existing URLs.
+- URLs ending in `.md` redirect to the same URL without it.
+- Discovery and the reader skip hidden paths (any part starting with `.`), symlinks that resolve outside `docs_dir`, and the reserved top-level slugs `login`, `logout`, and `static/...`.
+- The reader's back link is replaced with a breadcrumb of the doc's folders.
 
 ### Fixed
 
