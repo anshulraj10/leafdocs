@@ -36,12 +36,17 @@ def _verify_pin(candidate: str, hashes: list[bytes]) -> bool:
     return any(bcrypt.checkpw(candidate.encode(), h) for h in hashes)
 
 
-# Everything the enabled Markdown extensions (fenced_code, tables, toc, nl2br) emit
+_MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "toc", "nl2br", "pymdownx.arithmatex"]
+# Generic mode emits plain span/div.arithmatex wrappers for a client-side renderer (KaTeX).
+# Inline math is \(...\) only, so single dollar signs in prose (prices) stay plain text.
+_MARKDOWN_EXTENSION_CONFIGS = {"pymdownx.arithmatex": {"generic": True, "inline_syntax": ["round"]}}
+
+# Everything the enabled Markdown extensions (fenced_code, tables, toc, nl2br, arithmatex) emit
 _ALLOWED_TAGS = {
     "h1", "h2", "h3", "h4", "h5", "h6",
     "p", "br", "hr", "ul", "ol", "li", "blockquote", "pre", "code",
     "table", "thead", "tbody", "tr", "th", "td",
-    "em", "strong", "del", "a", "img", "div",
+    "em", "strong", "del", "a", "img", "div", "span",
 }
 _ALLOWED_ATTRIBUTES = {
     **{h: {"id"} for h in ("h1", "h2", "h3", "h4", "h5", "h6")},
@@ -49,6 +54,7 @@ _ALLOWED_ATTRIBUTES = {
     "img": {"src", "alt", "title"},
     "code": {"class"},
     "div": {"class"},
+    "span": {"class"},
     "th": {"style"},
     "td": {"style"},
 }
@@ -56,11 +62,13 @@ _LANGUAGE_CLASS = re.compile(r"language-[\w+#.-]+")
 
 
 def _filter_attribute(tag: str, attr: str, value: str) -> str | None:
-    """Restrict class values to what fenced_code (language-*) and toc (toc) produce."""
+    """Restrict class values to what fenced_code (language-*), toc (toc) and arithmatex produce."""
     if attr == "class":
         if tag == "code" and _LANGUAGE_CLASS.fullmatch(value):
             return value
-        if tag == "div" and value == "toc":
+        if tag == "div" and value in ("toc", "arithmatex"):
+            return value
+        if tag == "span" and value == "arithmatex":
             return value
         return None
     return value
@@ -308,10 +316,17 @@ class LeafDocs:
 
             html_content = markdown.markdown(
                 post.content,
-                extensions=["fenced_code", "tables", "toc", "nl2br"],
+                extensions=_MARKDOWN_EXTENSIONS,
+                extension_configs=_MARKDOWN_EXTENSION_CONFIGS,
             )
             if not leafdocs._allow_html:
                 html_content = _sanitize(html_content)
+
+            # Load the KaTeX and mermaid assets only on pages that need them. Match whole
+            # opening tags: text like `class="arithmatex"` in a code span keeps its quotes,
+            # but its < is always escaped, so it cannot match.
+            has_math = '<span class="arithmatex">' in html_content or '<div class="arithmatex">' in html_content
+            has_mermaid = '<code class="language-mermaid">' in html_content
 
             return render_template(
                 "reader.html",
@@ -319,6 +334,8 @@ class LeafDocs:
                 tags=tags,
                 crumbs=crumbs,
                 content=html_content,
+                has_math=has_math,
+                has_mermaid=has_mermaid,
                 auth_enabled=leafdocs._auth_enabled,
             )
 

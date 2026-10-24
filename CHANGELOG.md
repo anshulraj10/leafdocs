@@ -23,6 +23,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Search on the index also matches the doc path, and opens the folders that hold matches.
 - Image route. `.png`, `.jpg`, `.jpeg`, `.gif`, and `.webp` files inside `docs_dir` are served at their path, behind the same auth check and path guard as docs.
 - Sample nested docs under `docs/guides/`.
+- Math rendering. `pymdownx.arithmatex` (generic mode) marks up inline `\(...\)` and block `$$...$$` and `\[...\]`, and a bundled copy of KaTeX 0.19.0 renders it in the browser. Inline math is `\(...\)` only: single `$...$` is not treated as math, so prices such as `$5-$10` in prose render as written.
+- Mermaid diagrams. Fenced code blocks tagged `mermaid` are rendered in the browser by a bundled copy of mermaid 12.1.0, with `securityLevel: "strict"` and a theme taken from the dark palette.
+- KaTeX and mermaid load only on pages that contain math or diagrams. Both are served from `/static/vendor/`, with no CDN or runtime network access. Versions, sources, and checksums are in `src/leafdocs/static/vendor/VERSIONS.md`, with each license next to its files.
+- `pymdown-extensions` runtime dependency.
+- Sample doc `docs/math-and-diagrams.md`.
 
 ### Changed
 
@@ -30,6 +35,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - URLs ending in `.md` redirect to the same URL without it.
 - Discovery and the reader skip hidden paths (any part starting with `.`), symlinks that resolve outside `docs_dir`, and the reserved top-level slugs `login`, `logout`, and `static/...`.
 - The reader's back link is replaced with a breadcrumb of the doc's folders.
+- The sanitizer allowlist now keeps `span` elements and allows `class="arithmatex"` on `span` and `div`. Any other `class` value on those tags is still removed.
 
 ### Fixed
 

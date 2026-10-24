@@ -102,6 +102,33 @@ No other file types are served. SVG is excluded because it can carry scripts.
 
 ---
 
+## Math and diagrams
+
+Docs can contain TeX math and [mermaid](https://mermaid.js.org) diagrams. Both are rendered in the browser by copies of [KaTeX](https://katex.org) and mermaid bundled with the package, so nothing is fetched from a CDN. Pages without math or diagrams load neither library.
+
+Inline math uses `\(...\)`. Single dollar signs are left alone so prices in prose render normally. Block math uses `$$...$$` or `\[...\]`:
+
+```markdown
+The area is \(\pi r^2\), and it costs $5.
+
+$$
+\int_0^1 x^2 \, dx = \frac{1}{3}
+$$
+```
+
+Diagrams are fenced code blocks tagged `mermaid`:
+
+````markdown
+```mermaid
+flowchart LR
+  Write --> Commit --> Read
+```
+````
+
+Mermaid runs with `securityLevel: "strict"`, so click handlers and raw HTML in diagram labels are disabled. Bundled versions and their licenses are listed in [`src/leafdocs/static/vendor/VERSIONS.md`](src/leafdocs/static/vendor/VERSIONS.md).
+
+---
+
 ## Authentication
 
 By default the server runs open with no login required.
@@ -167,7 +194,7 @@ LEAFDOCS_ALLOW_HTML=false
 - **No caching** — Markdown is rendered on every request. Fine for personal or low-traffic use; not suitable for high-traffic production serving.
 - **No per-device session revocation** — rotating the pin invalidates all active sessions across all devices.
 - **No plugin system** — the primary extension hook is `ld.flask_app`. Add routes and middleware directly on the Flask app.
-- **Raw HTML in docs is sanitized** - rendered Markdown is passed through [nh3](https://github.com/messense/nh3) with an allowlist covering what the enabled extensions produce (headings with ids, lists, tables with alignment, code blocks with `language-*` classes, links, images, the `[TOC]` block). Scripts, event handler attributes, iframes, inline styles other than table alignment, and URL schemes other than `http`, `https`, and `mailto` are removed. Links get `rel="noopener noreferrer"`. Raw HTML outside the allowlist, such as `<details>` or `<span>`, is stripped. Set `LEAFDOCS_ALLOW_HTML=true` to turn sanitizing off; only do this when you are the sole author of all content.
+- **Raw HTML in docs is sanitized** - rendered Markdown is passed through [nh3](https://github.com/messense/nh3) with an allowlist covering what the enabled extensions produce (headings with ids, lists, tables with alignment, code blocks with `language-*` classes, links, images, the `[TOC]` block, and `span` and `div` elements with class `arithmatex` for math). Scripts, event handler attributes, iframes, inline styles other than table alignment, and URL schemes other than `http`, `https`, and `mailto` are removed. Links get `rel="noopener noreferrer"`. Raw HTML outside the allowlist, such as `<details>`, is stripped, and `class` on `span` and `div` is removed unless it is exactly `arithmatex` (or `toc` on `div`). Set `LEAFDOCS_ALLOW_HTML=true` to turn sanitizing off; only do this when you are the sole author of all content.
 
 ---
 
