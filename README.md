@@ -270,7 +270,11 @@ pip install -e ".[dev]"
 pytest tests/ -v
 ```
 
-`python main.py` runs a dev server on http://127.0.0.1:5000 (cookie Secure flag is off for plain http).
+`python main.py` runs a dev server on http://127.0.0.1:5000 (cookie Secure flag is off for plain http). `--docs-dir` picks the Markdown directory (default `./docs`) and `--port` the port (default `5000`):
+
+```bash
+python main.py --docs-dir docs/test --port 5002
+```
 
 ---
 

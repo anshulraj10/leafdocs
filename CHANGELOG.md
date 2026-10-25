@@ -21,6 +21,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - The sanitizer class allowlist is wider. `span` also keeps Pygments token classes, `div` also keeps `codehilite` and `admonition TYPE` for the six admonition types, and `p` keeps `admonition-title`. Any other `class` value is still removed.
 - Highlighted code blocks are now `<div class="codehilite"><pre><code>` with token spans, instead of `<pre><code class="language-*">`. Mermaid fences keep the old form.
+- `main.py` takes `--docs-dir` (default `./docs`) and `--port` (default `5000`), for example `python main.py --docs-dir docs/test --port 5002`. Importing `main` (as Gunicorn does with `main:app`) still serves `./docs` and does not parse arguments.
+- `SKILL.md` covers the current formatting rules: `\(...\)` inline math, mermaid fences, admonitions, the TOC sidebar, nested folders, and which raw HTML the sanitizer strips.
 
 ## [0.3.0] - 2026-10-25
 
