@@ -2,7 +2,10 @@
 
 {% block title %}{{ title }} — LeafDocs{% endblock %}
 
+{% block container_class %}{% if headings %} container-wide{% endif %}{% endblock %}
+
 {% block head %}
+<link rel="stylesheet" href="/static/pygments.css">
 {% if has_math %}
 <link rel="stylesheet" href="/static/vendor/katex/katex.min.css">
 {% endif %}
@@ -146,6 +149,74 @@
     margin: 0 0 1.25rem;
     text-align: center;
   }
+
+  /* codehilite wraps each <pre> in div.codehilite. The <pre> keeps the rules
+     above, so drop the Pygments style background from the wrapper. */
+  .prose .codehilite { background: none; }
+
+  /* Admonitions */
+  .prose .admonition {
+    --admonition-color: var(--muted);
+    margin: 1.25rem 0;
+    padding: 0.75rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--admonition-color);
+    border-radius: 0 var(--radius) var(--radius) 0;
+  }
+  .prose .admonition.tip     { --admonition-color: var(--accent); }
+  .prose .admonition.info    { --admonition-color: var(--info); }
+  .prose .admonition.warning { --admonition-color: var(--warning); }
+  .prose .admonition.danger  { --admonition-color: var(--danger); }
+  .prose .admonition.success { --admonition-color: var(--tag-text); }
+  .prose .admonition > :last-child { margin-bottom: 0; }
+  .prose .admonition-title {
+    font-family: var(--font-ui);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--admonition-color);
+    margin-bottom: 0.4rem;
+  }
+
+  /* TOC sidebar, only on viewports wide enough to hold it next to the prose */
+  .toc-sidebar { display: none; }
+  @media (min-width: 1180px) {
+    .container-wide { max-width: 1140px; }
+    .reader-body.has-toc {
+      display: grid;
+      grid-template-columns: minmax(0, 720px) 220px;
+      justify-content: space-between;
+      gap: 3rem;
+    }
+    .toc-sidebar {
+      display: block;
+      position: sticky;
+      top: 1.5rem;
+      align-self: start;
+      max-height: calc(100vh - 3rem);
+      overflow-y: auto;
+      font-size: 0.82rem;
+      border-left: 1px solid var(--border);
+      padding-left: 1rem;
+    }
+  }
+  .toc-sidebar-title {
+    color: var(--muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-size: 0.72rem;
+    margin-bottom: 0.6rem;
+  }
+  .toc-sidebar ul { list-style: none; }
+  .toc-sidebar li { margin-bottom: 0.35rem; line-height: 1.4; }
+  .toc-sidebar a { color: var(--muted); transition: color 0.15s; }
+  .toc-sidebar a:hover { color: var(--text); text-decoration: none; }
+  .toc-depth-1 { padding-left: 0.85rem; }
+  .toc-depth-2 { padding-left: 1.7rem; }
+  .toc-depth-3 { padding-left: 2.55rem; }
+  .toc-depth-4 { padding-left: 3.4rem; }
+  .toc-depth-5 { padding-left: 4.25rem; }
 </style>
 {% endblock %}
 
@@ -168,8 +239,20 @@
   {% endif %}
 </div>
 
-<div class="prose">
-  {{ content | safe }}
+<div class="reader-body{% if headings %} has-toc{% endif %}">
+  <div class="prose">
+    {{ content | safe }}
+  </div>
+  {% if headings %}
+  <aside class="toc-sidebar" aria-label="On this page">
+    <p class="toc-sidebar-title">On this page</p>
+    <ul>
+      {% for heading in headings %}
+      <li class="toc-depth-{{ heading.depth }}"><a href="#{{ heading.id }}">{{ heading.text }}</a></li>
+      {% endfor %}
+    </ul>
+  </aside>
+  {% endif %}
 </div>
 
 {% if has_math %}

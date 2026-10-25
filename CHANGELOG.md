@@ -9,6 +9,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-25
+
+### Migrating from 0.3.x
+
+- Lines starting with `!!!` now render as admonitions. A doc that used `!!!` as plain text needs it escaped or reworded.
+- Fenced code is syntax highlighted on the server. New runtime dependency: `Pygments`.
+- The `span` and `div` class allowlist is wider: Pygments token classes, admonition classes and `codehilite` are kept. A hand-written `<span class="k">` in a doc keeps its class, which only maps to a text color.
+- Symlinked files and directories inside the docs directory now return 404 and are not listed. Symlinks that escape the docs directory still return 403.
+
+### Added
+
+- Syntax highlighting. Fenced code blocks tagged with a language are highlighted on the server by Pygments through the `codehilite` extension, with class based output styled by `static/pygments.css` (Pygments style `github-dark`, loaded on reader pages only). Untagged fences and unknown languages render as plain code. `mermaid` fences skip highlighting and still render as diagrams.
+- Admonitions. `!!! TYPE "Title"` blocks with an indented body, for the types `note`, `tip`, `info`, `warning`, `danger` and `success`. Unknown types render as `note`.
+- TOC sidebar. Docs with three or more headings get a sticky "On this page" sidebar on screens at least 1180px wide, indented by heading level. An `h1` matching the doc title is left out. No JavaScript.
+- Sample doc `docs/highlighting-and-admonitions.md`.
+- Manual test docs under `docs/test/` covering frontmatter, sorting, math, mermaid, the sanitizer, code highlighting, admonitions, a long doc, links and images, broken input, nested folders, hidden paths and symlinks. `docs/test/README.md` lists each file with its expected result. The symlink cases are not tracked in git; `scripts/make-test-symlinks.sh` creates them.
+- `Pygments>=2.5.1` runtime dependency.
+
+### Changed
+
+- The sanitizer class allowlist is wider. `span` also keeps Pygments token classes, `div` also keeps `codehilite` and `admonition TYPE` for the six admonition types, and `p` keeps `admonition-title`. Any other `class` value is still removed.
+- Highlighted code blocks are now `<div class="codehilite"><pre><code>` with token spans, instead of `<pre><code class="language-*">`. Mermaid fences keep the old form.
+- `main.py` takes `--docs-dir` (default `./docs`) and `--port` (default `5000`), for example `python main.py --docs-dir docs/test --port 5002`. Importing `main` (as Gunicorn does with `main:app`) still serves `./docs` and does not parse arguments.
+- `SKILL.md` covers the current formatting rules: `\(...\)` inline math, mermaid fences, admonitions, the TOC sidebar, nested folders, and which raw HTML the sanitizer strips.
+
+### Fixed
+
+- Symlinks inside `docs_dir` no longer create alias URLs. A symlinked file was listed as a duplicate of its target, and docs and images were readable through symlinked directories and loops (for example `/loop/loop/doc`). Discovery now skips, and the reader and image routes return 404 for, any path whose resolved location differs from its path under `docs_dir`. Symlinks that escape `docs_dir` still return 403.
+
 ## [0.3.0] - 2026-10-25
 
 ### Migrating from 0.2.x
