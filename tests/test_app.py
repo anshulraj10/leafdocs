@@ -7,6 +7,7 @@ Run with:
 
 import os
 import pathlib
+import re
 import pytest
 
 from leafdocs import LeafDocs
@@ -301,9 +302,9 @@ class TestSanitize:
         assert '<th style="text-align:center">Center</th>' in body
         assert '<td style="text-align:right">c</td>' in body
 
-    def test_fenced_code_language_class_survives(self, docs_dir, monkeypatch):
+    def test_fenced_code_is_highlighted(self, docs_dir, monkeypatch):
         body = _reader_client(docs_dir, monkeypatch).get("/features").data.decode()
-        assert '<pre><code class="language-python">' in body
+        assert '<div class="codehilite"><pre><span></span><code><span class="nb">print</span>' in body
 
     def test_toc_div_survives(self, docs_dir, monkeypatch):
         (docs_dir / "toc.md").write_text("[TOC]\n\n# One\n\n## Two\n")
@@ -879,3 +880,254 @@ class TestMathAndMermaid:
         assert "url(fonts/" in css
         assert 'format("woff")' not in css
         assert "truetype" not in css
+
+
+# ---------------------------------------------------------------------------
+# Syntax highlighting, admonitions and the TOC sidebar
+# ---------------------------------------------------------------------------
+
+PYGMENTS_CSS = "/static/pygments.css"
+MERMAID_HTML = '<pre><code class="language-mermaid">graph TD\n  A --&gt; B\n</code></pre>'
+ADMONITION_TYPES = ("note", "tip", "info", "warning", "danger", "success")
+
+
+def _prose(body):
+    """The rendered doc body, without the TOC sidebar."""
+    start = body.index('<div class="prose">')
+    end = body.find('<aside class="toc-sidebar"', start)
+    return body[start:] if end == -1 else body[start:end]
+
+
+def _sidebar(body):
+    start = body.index('<aside class="toc-sidebar"')
+    return body[start:body.index("</aside>", start)]
+
+
+class TestHighlightAdmonitionToc:
+    @pytest.mark.parametrize(
+        "fence, expected",
+        [
+            # Spans are checked one by one: whether whitespace gets its own span varies by Pygments version
+            (
+                "```python\ndef f():\n    return 1\n```",
+                ['<span class="k">def</span>', '<span class="nf">f</span>', '<span class="mi">1</span>'],
+            ),
+            (
+                '```bash\necho "$HOME"\n```',
+                ['<span class="nb">echo</span>', '<span class="nv">$HOME</span>', '<span class="s2">"</span>'],
+            ),
+            ('```json\n{"a": 1}\n```', ['<span class="nt">"a"</span>', '<span class="mi">1</span>']),
+            # Token subtype outside Pygments' standard list
+            ("```yaml\nkey: value\n```", ['<span class="l l-Scalar l-Scalar-Plain">value</span>']),
+        ],
+    )
+    def test_fences_highlighted_and_token_classes_survive(self, tmp_path, monkeypatch, fence, expected):
+        _write(tmp_path, "code.md", fence + "\n")
+        prose = _prose(_render_client(tmp_path, monkeypatch).get("/code").data.decode())
+        assert '<div class="codehilite"><pre><span></span><code>' in prose
+        for span in expected:
+            assert span in prose
+
+    @pytest.mark.parametrize("opener", ["```", "```nosuchlanguage", "```{ .nosuchlanguage }"])
+    def test_unlabeled_and_unknown_fences_render(self, tmp_path, monkeypatch, opener):
+        _write(tmp_path, "code.md", f"{opener}\nplain <text> & more\n```\n\nAfter.\n")
+        r = _render_client(tmp_path, monkeypatch).get("/code")
+        assert r.status_code == 200
+        prose = _prose(r.data.decode())
+        assert '<div class="codehilite"><pre><span></span><code>plain &lt;text&gt; &amp; more\n</code></pre></div>' in prose
+        assert "<p>After.</p>" in prose
+
+    @pytest.mark.parametrize(
+        "opener", ["```mermaid", "~~~mermaid", "```.mermaid", "``` mermaid", "```{ .mermaid }", "````mermaid"]
+    )
+    def test_mermaid_fence_skips_highlighting(self, tmp_path, monkeypatch, opener):
+        closer = opener[: len(opener) - len(opener.lstrip("`~"))]
+        _write(
+            tmp_path,
+            "both.md",
+            f"{opener}\ngraph TD\n  A --> B\n{closer}\n\n```python\nx = 1\n```\n",
+        )
+        body = _render_client(tmp_path, monkeypatch).get("/both").data.decode()
+        assert MERMAID_HTML in body
+        assert MERMAID_ASSET in body
+        assert RENDER_ASSET in body
+        assert '<span class="n">x</span>' in body
+
+    def test_mermaid_inside_outer_fence_stays_code(self, tmp_path, monkeypatch):
+        _write(tmp_path, "nested.md", "````markdown\n```mermaid\ngraph TD\n```\n````\n")
+        body = _render_client(tmp_path, monkeypatch).get("/nested").data.decode()
+        assert 'class="language-mermaid"' not in body
+        assert MERMAID_ASSET not in body
+        assert "mermaid" in _prose(body)
+
+    def test_math_next_to_code(self, tmp_path, monkeypatch):
+        _write(tmp_path, "mixed.md", "Inline \\(a_b\\).\n\n```python\ns = r\"\\(x\\)\"\n```\n\n$$\ny^2\n$$\n")
+        body = _render_client(tmp_path, monkeypatch).get("/mixed").data.decode()
+        assert r'<span class="arithmatex">\(a_b\)</span>' in body
+        assert '<div class="arithmatex">\\[\ny^2\n\\]</div>' in body
+        assert '<div class="codehilite">' in body
+        # TeX delimiters inside code stay code, not math
+        assert body.count('class="arithmatex"') == 2
+        for asset in KATEX_ASSETS + (RENDER_ASSET,):
+            assert asset in body
+
+    @pytest.mark.parametrize("kind", ADMONITION_TYPES)
+    def test_admonition_types(self, tmp_path, monkeypatch, kind):
+        _write(tmp_path, "adm.md", f'!!! {kind} "Heads up"\n    Body text.\n')
+        prose = _prose(_render_client(tmp_path, monkeypatch).get("/adm").data.decode())
+        assert f'<div class="admonition {kind}">\n<p class="admonition-title">Heads up</p>\n<p>Body text.</p>\n</div>' in prose
+
+    def test_admonition_default_title(self, tmp_path, monkeypatch):
+        _write(tmp_path, "adm.md", "!!! warning\n    Body.\n")
+        prose = _prose(_render_client(tmp_path, monkeypatch).get("/adm").data.decode())
+        assert '<div class="admonition warning">\n<p class="admonition-title">Warning</p>' in prose
+
+    @pytest.mark.parametrize(
+        "header, kind",
+        [("!!! banana", "note"), ("!!! Banana extra", "note"), ("!!! warning extra", "warning")],
+    )
+    def test_unknown_admonition_type_falls_back(self, tmp_path, monkeypatch, header, kind):
+        _write(tmp_path, "adm.md", f"{header}\n    Body.\n")
+        prose = _prose(_render_client(tmp_path, monkeypatch).get("/adm").data.decode())
+        assert f'<div class="admonition {kind}">' in prose
+        assert re.findall(r'<div class="([^"]*)"', prose) == ["prose", f"admonition {kind}"]
+        assert "extra" not in prose
+
+    def test_admonition_rich_body(self, tmp_path, monkeypatch):
+        _write(
+            tmp_path,
+            "adm.md",
+            '!!! tip "Rich"\n    Intro:\n\n    - item with `code`\n    - item with \\(a^2\\)\n',
+        )
+        body = _render_client(tmp_path, monkeypatch).get("/adm").data.decode()
+        prose = _prose(body)
+        assert '<div class="admonition tip">' in prose
+        assert "<li>item with <code>code</code></li>" in prose
+        assert r'<li>item with <span class="arithmatex">\(a^2\)</span></li>' in prose
+        assert KATEX_ASSETS[0] in body
+
+    @pytest.mark.parametrize(
+        "raw, expected",
+        [
+            ('<span class="k nf">a</span>', '<span class="k nf">a</span>'),
+            ('<span class="k evil-class">a</span>', "<span>a</span>"),
+            ('<span class="arithmatex">a</span>', '<span class="arithmatex">a</span>'),
+            ('<span class="l l-Scalar">a</span>', '<span class="l l-Scalar">a</span>'),
+            ('<span class="k  nf">a</span>', "<span>a</span>"),
+            ('<span class="k" onclick="x()" style="color:red">a</span>', '<span class="k">a</span>'),
+            ('<div class="admonition note">d</div>', '<div class="admonition note">d</div>'),
+            ('<div class="admonition note evil">d</div>', "<div>d</div>"),
+            ('<div class="admonition banana">d</div>', "<div>d</div>"),
+            ('<div class="codehilite">d</div>', '<div class="codehilite">d</div>'),
+            ('<div class="toc" onclick="x()" style="color:red">d</div>', '<div class="toc">d</div>'),
+            ('<p class="admonition-title">t</p>', '<p class="admonition-title">t</p>'),
+            ('<p class="other">t</p>', "<p>t</p>"),
+            ('<p class="admonition-title" onclick="x()" style="color:red">t</p>', '<p class="admonition-title">t</p>'),
+            ('<pre class="codehilite">c</pre>', "<pre>c</pre>"),
+        ],
+    )
+    def test_sanitizer_class_rules(self, tmp_path, monkeypatch, raw, expected):
+        _write(tmp_path, "raw.md", raw + "\n")
+        prose = _prose(_render_client(tmp_path, monkeypatch).get("/raw").data.decode())
+        assert expected in prose
+        for leftover in ("onclick", "style=", "evil", "banana", "other"):
+            assert leftover not in prose
+
+    def test_allow_html_keeps_raw_classes(self, tmp_path, monkeypatch):
+        _write(tmp_path, "raw.md", '<p class="other" onclick="x()">t</p>\n\n```python\nx = 1\n```\n')
+        body = _render_client(tmp_path, monkeypatch, allow_html="true").get("/raw").data.decode()
+        assert '<p class="other" onclick="x()">t</p>' in body
+        assert '<span class="n">x</span>' in body
+
+    def test_toc_sidebar_ids_match_headings(self, tmp_path, monkeypatch):
+        _write(
+            tmp_path,
+            "guide.md",
+            "---\ntitle: The Guide\n---\n\n# The Guide\n\n## Alpha\n\n### Beta\n\n## Gamma\n\n## Alpha\n",
+        )
+        body = _render_client(tmp_path, monkeypatch).get("/guide").data.decode()
+        sidebar = _sidebar(body)
+        heading_ids = re.findall(r'<h[1-6] id="([^"]+)"', _prose(body))
+        link_ids = re.findall(r'href="#([^"]+)"', sidebar)
+        # The h1 matching the doc title is left out of the sidebar
+        assert heading_ids == ["the-guide", "alpha", "beta", "gamma", "alpha_1"]
+        assert link_ids == heading_ids[1:]
+        assert '<li class="toc-depth-0"><a href="#alpha">Alpha</a></li>' in sidebar
+        assert '<li class="toc-depth-1"><a href="#beta">Beta</a></li>' in sidebar
+        assert '<div class="container container-wide">' in body
+        assert '<div class="reader-body has-toc">' in body
+
+    def test_h1_not_matching_title_is_listed(self, tmp_path, monkeypatch):
+        _write(tmp_path, "doc.md", "---\ntitle: Other\n---\n\n# Intro\n\n## One\n\n## Two\n")
+        sidebar = _sidebar(_render_client(tmp_path, monkeypatch).get("/doc").data.decode())
+        assert re.findall(r'href="#([^"]+)"', sidebar) == ["intro", "one", "two"]
+        assert '<li class="toc-depth-1"><a href="#one">One</a></li>' in sidebar
+
+    @pytest.mark.parametrize(
+        "content",
+        [
+            "# Doc\n\n## One\n\n## Two\n",  # 3 headings, but the h1 matches the title
+            "## One\n\n## Two\n",
+            "Just text, no headings.\n",
+        ],
+    )
+    def test_no_sidebar_under_three_headings(self, tmp_path, monkeypatch, content):
+        _write(tmp_path, "doc.md", content)
+        r = _render_client(tmp_path, monkeypatch).get("/doc")
+        assert r.status_code == 200
+        body = r.data.decode()
+        assert "toc-sidebar" not in body.split("</style>")[-1]
+        assert '<div class="container">' in body
+        assert '<div class="reader-body">' in body
+
+    def test_sidebar_heading_text_escaped(self, tmp_path, monkeypatch):
+        _write(
+            tmp_path,
+            "evil.md",
+            "## Use `<script>` & more\n\n## A <script>alert(1)</script> & B\n\n## Tom &amp; Jerry\n",
+        )
+        sidebar = _sidebar(_render_client(tmp_path, monkeypatch).get("/evil").data.decode())
+        assert '<a href="#use-script-more">Use &lt;script&gt; &amp; more</a>' in sidebar
+        assert "<script" not in sidebar
+        assert "&amp;amp;" not in sidebar
+        assert ">Tom &amp; Jerry</a>" in sidebar
+
+    def test_sidebar_on_nested_doc_keeps_breadcrumb(self, tmp_path, monkeypatch):
+        _write(tmp_path, "guides/deep/doc.md", "## One\n\n## Two\n\n## Three\n")
+        body = _render_client(tmp_path, monkeypatch).get("/guides/deep/doc").data.decode()
+        assert '<span>Guides</span>' in body
+        assert '<span>Deep</span>' in body
+        assert re.findall(r'href="#([^"]+)"', _sidebar(body)) == ["one", "two", "three"]
+
+    def test_no_state_shared_between_requests(self, tmp_path, monkeypatch):
+        _write(tmp_path, "many.md", "## One\n\n## Two\n\n## Three\n")
+        _write(tmp_path, "one.md", "## Only\n")
+        client = _render_client(tmp_path, monkeypatch)
+        assert "toc-sidebar" in client.get("/many").data.decode().split("</style>")[-1]
+        body = client.get("/one").data.decode()
+        assert "toc-sidebar" not in body.split("</style>")[-1]
+        assert '<h2 id="only">Only</h2>' in body
+        # A shared toc extension would number a repeated id
+        assert '<h2 id="one">One</h2>' in client.get("/many").data.decode()
+
+    def test_pygments_css_served(self, tmp_path, monkeypatch):
+        r = _render_client(tmp_path, monkeypatch).get(PYGMENTS_CSS)
+        assert r.status_code == 200
+        assert r.mimetype == "text/css"
+        css = r.data.decode()
+        r.close()
+        assert ".codehilite .k {" in css
+        # Every rule is scoped to .codehilite
+        rules = [line for line in css.splitlines() if "{" in line]
+        assert rules and all(line.startswith(".codehilite") for line in rules)
+
+    def test_pygments_css_only_on_reader_pages(self, tmp_path, monkeypatch):
+        _write(tmp_path, "doc.md", "Plain text.\n")
+        client = _render_client(tmp_path, monkeypatch)
+        assert PYGMENTS_CSS in client.get("/doc").data.decode()
+        assert PYGMENTS_CSS not in client.get("/").data.decode()
+
+        client = _nested_client(tmp_path, monkeypatch, pins="1234")
+        r = client.get("/login")
+        assert r.status_code == 200
+        assert PYGMENTS_CSS not in r.data.decode()

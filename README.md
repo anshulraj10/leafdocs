@@ -129,6 +129,44 @@ Mermaid runs with `securityLevel: "strict"`, so click handlers and raw HTML in d
 
 ---
 
+## Code highlighting
+
+Fenced code blocks tagged with a language are highlighted on the server by [Pygments](https://pygments.org), so no JavaScript is involved. Colors come from `static/pygments.css` (the `github-dark` style), which is loaded on reader pages only. Untagged fences and unknown languages render as plain code, and `mermaid` fences are left for the diagram renderer.
+
+````markdown
+```python
+def greet(name: str) -> str:
+    return f"Hello, {name}"
+```
+````
+
+---
+
+## Admonitions
+
+Callout boxes use the `!!!` syntax from Python-Markdown's `admonition` extension: the type, an optional quoted title, then a body indented by four spaces. The body can hold lists, code and math. Supported types are `note`, `tip`, `info`, `warning`, `danger` and `success`. Any other type renders as a `note`, keeping its title.
+
+```markdown
+!!! warning "Plain HTTP"
+    Set `LEAFDOCS_COOKIE_SECURE=false` when serving over plain HTTP.
+```
+
+---
+
+## TOC sidebar
+
+Docs with three or more headings get an "On this page" sidebar next to the text, listing each heading indented by level. An `h1` with the same text as the doc title is left out and does not count toward the three. The sidebar is plain CSS: it stays in view while you scroll, scrolls on its own when long, and is hidden on screens narrower than 1180px. For example, a doc titled "My Tool" (from frontmatter or the filename `my-tool.md`) with this content gets a sidebar with Install, Usage and Options:
+
+```markdown
+# My Tool
+
+## Install
+## Usage
+### Options
+```
+
+---
+
 ## Authentication
 
 By default the server runs open with no login required.
@@ -194,7 +232,13 @@ LEAFDOCS_ALLOW_HTML=false
 - **No caching** — Markdown is rendered on every request. Fine for personal or low-traffic use; not suitable for high-traffic production serving.
 - **No per-device session revocation** — rotating the pin invalidates all active sessions across all devices.
 - **No plugin system** — the primary extension hook is `ld.flask_app`. Add routes and middleware directly on the Flask app.
-- **Raw HTML in docs is sanitized** - rendered Markdown is passed through [nh3](https://github.com/messense/nh3) with an allowlist covering what the enabled extensions produce (headings with ids, lists, tables with alignment, code blocks with `language-*` classes, links, images, the `[TOC]` block, and `span` and `div` elements with class `arithmatex` for math). Scripts, event handler attributes, iframes, inline styles other than table alignment, and URL schemes other than `http`, `https`, and `mailto` are removed. Links get `rel="noopener noreferrer"`. Raw HTML outside the allowlist, such as `<details>`, is stripped, and `class` on `span` and `div` is removed unless it is exactly `arithmatex` (or `toc` on `div`). Set `LEAFDOCS_ALLOW_HTML=true` to turn sanitizing off; only do this when you are the sole author of all content.
+- **Raw HTML in docs is sanitized** - rendered Markdown is passed through [nh3](https://github.com/messense/nh3) with an allowlist covering what the enabled extensions produce (headings with ids, lists, tables with alignment, highlighted code blocks, `language-*` classes on `code`, links, images, the `[TOC]` block, admonitions, and `span` and `div` elements with class `arithmatex` for math). Scripts, event handler attributes, iframes, inline styles other than table alignment, and URL schemes other than `http`, `https`, and `mailto` are removed. Links get `rel="noopener noreferrer"`. Raw HTML outside the allowlist, such as `<details>`, is stripped. `class` is kept only on these elements and only with these values, and is removed otherwise:
+  - `span`: `arithmatex`, or a list of Pygments token classes such as `k`, `nf`, `s2` or `l l-Scalar` (short lowercase names separated by single spaces)
+  - `div`: `toc`, `arithmatex`, `codehilite`, or `admonition TYPE` where TYPE is one of the six admonition types
+  - `p`: `admonition-title`
+  - `code`: `language-*`
+
+  Because the rule checks the shape of the class, not where it came from, a hand-written `<span class="k">` in a doc keeps its class. This is accepted: a token class only maps to a text color in `pygments.css`. Set `LEAFDOCS_ALLOW_HTML=true` to turn sanitizing off; only do this when you are the sole author of all content.
 
 ---
 
