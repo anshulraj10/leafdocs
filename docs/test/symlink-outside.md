@@ -1,1 +1,0 @@
-/tmp/ld-outside.md
