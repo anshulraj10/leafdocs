@@ -217,3 +217,9 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 .DS_Store
+
+# Manual test symlinks, created by scripts/make-test-symlinks.sh
+docs/test/symlink-inside.md
+docs/test/symlinked-dir
+docs/test/loop
+docs/test/symlink-outside.md
