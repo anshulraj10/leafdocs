@@ -40,6 +40,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 
 - `docs/authentication.md` claimed the session cookie was `secure` when it was not.
+- Symlinks inside `docs_dir` no longer create alias URLs. A symlinked file was listed as a duplicate of its target, and docs and images were readable through symlinked directories and loops (for example `/loop/loop/doc`). Discovery now skips, and the reader and image routes return 404 for, any path whose resolved location differs from its path under `docs_dir`. Symlinks that escape `docs_dir` still return 403.
 
 ## [0.1.0] - 2026-06-06
 
