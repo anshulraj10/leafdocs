@@ -23,12 +23,12 @@ This README is itself a doc, so it is listed as "Manual Test Docs".
 | `02-string-tags.md` | Comma separated string tags | 200, tags one, two, three |
 | `Zebra-sort-check.md`, `apple-sort-check.md` | Case-insensitive title sort | 200, Apple listed before Zebra |
 | `math.md` | Inline `\(...\)`, block `$$` and `\[...\]`, math in lists and tables, `#heading` anchor | 200, KaTeX renders every formula |
-| `mermaid.md` | Flowchart, sequence and class diagrams next to math and a python fence | 200, three diagrams render |
+| `mermaid.md` | Flowchart, sequence and class diagrams next to math and a python fence | 200, three diagrams render and the python fence is highlighted |
 | `dollars.md` | Prices and stray `$` signs | 200, every `$` stays plain text |
 | `html-and-sanitizer.md` | Script, onerror, javascript and data URLs, iframe, onclick, style, class, details | 200, every payload stripped or neutralized |
-| `code-highlighting.md` | Fences in several languages, none, unknown, long line | 200, long line scrolls horizontally |
-| `admonitions.md` | `!!!` blocks of each type, unknown type, custom title, rich body | 200, plain text until admonitions are supported |
-| `long-doc.md` | 40 headings from h1 to h4, `&` and `<b>` in a heading | 200, every heading gets an id |
+| `code-highlighting.md` | Fences in several languages, none, unknown, long line | 200, tagged fences highlighted, long line scrolls horizontally |
+| `admonitions.md` | `!!!` blocks of each type, unknown type, custom title, rich body | 200, each type styled, banana renders as a note |
+| `long-doc.md` | 40 headings from h1 to h4, `&` and `<b>` in a heading | 200, every heading gets an id, sidebar sticky and scrollable on wide screens, hidden on narrow ones |
 | `links-and-images.md` | Relative image and `.md` links, anchor, external link, svg, escaping image path | 200, svg and escaping image return 404 |
 | `broken-things.md` | Invalid mermaid, invalid TeX, unclosed admonition and code fence | 200, each error stays inside its block |
 | `nested/level-one.md` | Nested doc with frontmatter | 200, breadcrumb Docs / Test / Nested |

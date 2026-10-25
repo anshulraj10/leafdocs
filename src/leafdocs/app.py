@@ -1,14 +1,21 @@
+import html
 import os
 import pathlib
 import hashlib
 import re
 import secrets
+import xml.etree.ElementTree as etree
 
 import bcrypt
 import frontmatter
 import markdown
 import nh3
 from dotenv import load_dotenv
+from markdown.extensions import Extension
+from markdown.extensions.attr_list import get_attrs_and_remainder
+from markdown.extensions.fenced_code import FencedBlockPreprocessor
+from markdown.preprocessors import Preprocessor
+from markdown.treeprocessors import Treeprocessor
 from flask import (
     Flask,
     abort,
@@ -36,12 +43,108 @@ def _verify_pin(candidate: str, hashes: list[bytes]) -> bool:
     return any(bcrypt.checkpw(candidate.encode(), h) for h in hashes)
 
 
-_MARKDOWN_EXTENSIONS = ["fenced_code", "tables", "toc", "nl2br", "pymdownx.arithmatex"]
-# Generic mode emits plain span/div.arithmatex wrappers for a client-side renderer (KaTeX).
-# Inline math is \(...\) only, so single dollar signs in prose (prices) stay plain text.
-_MARKDOWN_EXTENSION_CONFIGS = {"pymdownx.arithmatex": {"generic": True, "inline_syntax": ["round"]}}
+_MARKDOWN_EXTENSIONS = [
+    "fenced_code", "codehilite", "tables", "toc", "nl2br", "admonition", "pymdownx.arithmatex",
+]
+_MARKDOWN_EXTENSION_CONFIGS = {
+    # Generic mode emits plain span/div.arithmatex wrappers for a client-side renderer (KaTeX).
+    # Inline math is \(...\) only, so single dollar signs in prose (prices) stay plain text.
+    "pymdownx.arithmatex": {"generic": True, "inline_syntax": ["round"]},
+    # Class based Pygments output, styled by static/pygments.css
+    "codehilite": {"css_class": "codehilite", "guess_lang": False, "noclasses": False, "linenums": False},
+}
 
-# Everything the enabled Markdown extensions (fenced_code, tables, toc, nl2br, arithmatex) emit
+_ADMONITION_TYPES = ("note", "tip", "info", "warning", "danger", "success")
+
+
+class _MermaidFencePreprocessor(Preprocessor):
+    """
+    Rewrite the opening line of each mermaid fence to `{ .mermaid use_pygments=false }`
+    before fenced_code runs, so codehilite skips it and fenced_code still emits
+    <pre><code class="language-mermaid"> for reader-render.js. Fences are found with
+    fenced_code's own regex and search loop, so block boundaries are unchanged.
+    """
+
+    def run(self, lines: list[str]) -> list[str]:
+        text = "\n".join(lines)
+        index = 0
+        while m := FencedBlockPreprocessor.FENCED_BLOCK_RE.search(text, index):
+            if m.group("attrs"):
+                attrs, remainder = get_attrs_and_remainder(m.group("attrs"))
+                if remainder:
+                    # fenced_code skips invalid attrs the same way
+                    index = m.end("attrs")
+                    continue
+                classes = [v for k, v in attrs if k == "."]
+                is_mermaid = bool(classes) and classes[0] == "mermaid"
+                opener = f" {{{m.group('attrs')} use_pygments=false}}\n"
+            else:
+                is_mermaid = m.group("lang") == "mermaid"
+                opener = " { .mermaid use_pygments=false }\n"
+            if not is_mermaid:
+                index = m.end()
+                continue
+            start, end = m.end("fence"), m.start("code")
+            text = text[:start] + opener + text[end:]
+            index = m.end() + len(opener) - (end - start)
+        return text.split("\n")
+
+
+class _AdmonitionTypeTreeprocessor(Treeprocessor):
+    """Keep only the first admonition type, and turn unknown types into `note`."""
+
+    def run(self, root: etree.Element) -> None:
+        for div in root.iter("div"):
+            classes = div.get("class", "").split()
+            if classes[:1] != ["admonition"]:
+                continue
+            kind = classes[1] if len(classes) > 1 and classes[1] in _ADMONITION_TYPES else "note"
+            div.set("class", f"admonition {kind}")
+
+
+class _LeafDocsExtension(Extension):
+    def extendMarkdown(self, md: markdown.Markdown) -> None:
+        # After normalize_whitespace (30), before fenced_code (25)
+        md.preprocessors.register(_MermaidFencePreprocessor(md), "leafdocs_mermaid_fence", 27)
+        md.treeprocessors.register(_AdmonitionTypeTreeprocessor(md), "leafdocs_admonition_type", 15)
+
+
+def _render_markdown(text: str) -> tuple[str, list[dict]]:
+    """Return (html, toc_tokens). A Markdown instance holds per-document state, so build one per call."""
+    md = markdown.Markdown(
+        extensions=[*_MARKDOWN_EXTENSIONS, _LeafDocsExtension()],
+        extension_configs=_MARKDOWN_EXTENSION_CONFIGS,
+    )
+    return md.convert(text), md.toc_tokens
+
+
+def _toc_headings(tokens: list[dict], title: str) -> list[dict]:
+    """
+    Flatten toc_tokens into dicts with level, id, text and depth for the sidebar.
+    An h1 matching the doc title is dropped. Returns [] when fewer than 3
+    headings remain. text is plain (unescaped) and must be autoescaped.
+    """
+    flat = []
+
+    def walk(nodes: list[dict]) -> None:
+        for node in nodes:
+            # toc already escapes name; unescape it so Jinja escapes it exactly once
+            flat.append({"level": node["level"], "id": node["id"], "text": html.unescape(node["name"])})
+            walk(node["children"])
+
+    walk(tokens)
+    doc_title = str(title).strip().casefold()
+    flat = [h for h in flat if not (h["level"] == 1 and h["text"].strip().casefold() == doc_title)]
+    if len(flat) < 3:
+        return []
+    top = min(h["level"] for h in flat)
+    for h in flat:
+        h["depth"] = h["level"] - top
+    return flat
+
+
+# Everything the enabled Markdown extensions (fenced_code, codehilite, tables, toc, nl2br,
+# admonition, arithmatex) emit
 _ALLOWED_TAGS = {
     "h1", "h2", "h3", "h4", "h5", "h6",
     "p", "br", "hr", "ul", "ol", "li", "blockquote", "pre", "code",
@@ -55,20 +158,28 @@ _ALLOWED_ATTRIBUTES = {
     "code": {"class"},
     "div": {"class"},
     "span": {"class"},
+    "p": {"class"},
     "th": {"style"},
     "td": {"style"},
 }
 _LANGUAGE_CLASS = re.compile(r"language-[\w+#.-]+")
+# A Pygments token class is a short standard name (k, nf, s2) plus one -Name segment per
+# token subtype outside Pygments' standard list (YAML emits "l l-Scalar l-Scalar-Plain")
+_PYGMENTS_TOKEN = r"[a-z]{1,3}[0-9]?(?:-[A-Z][A-Za-z0-9]*)*"
+_PYGMENTS_CLASSES = re.compile(rf"{_PYGMENTS_TOKEN}(?: {_PYGMENTS_TOKEN})*")
+_DIV_CLASSES = {"toc", "arithmatex", "codehilite", *(f"admonition {t}" for t in _ADMONITION_TYPES)}
 
 
 def _filter_attribute(tag: str, attr: str, value: str) -> str | None:
-    """Restrict class values to what fenced_code (language-*), toc (toc) and arithmatex produce."""
+    """Restrict class values to what fenced_code, codehilite, toc, admonition and arithmatex produce."""
     if attr == "class":
         if tag == "code" and _LANGUAGE_CLASS.fullmatch(value):
             return value
-        if tag == "div" and value in ("toc", "arithmatex"):
+        if tag == "div" and value in _DIV_CLASSES:
             return value
-        if tag == "span" and value == "arithmatex":
+        if tag == "span" and (value == "arithmatex" or _PYGMENTS_CLASSES.fullmatch(value)):
+            return value
+        if tag == "p" and value == "admonition-title":
             return value
         return None
     return value
@@ -324,11 +435,7 @@ class LeafDocs:
             title, tags = _doc_meta(post, md_file)
             crumbs = [_display_name(part) for part in rel.parts[:-1]]
 
-            html_content = markdown.markdown(
-                post.content,
-                extensions=_MARKDOWN_EXTENSIONS,
-                extension_configs=_MARKDOWN_EXTENSION_CONFIGS,
-            )
+            html_content, toc_tokens = _render_markdown(post.content)
             if not leafdocs._allow_html:
                 html_content = _sanitize(html_content)
 
@@ -344,6 +451,7 @@ class LeafDocs:
                 tags=tags,
                 crumbs=crumbs,
                 content=html_content,
+                headings=_toc_headings(toc_tokens, title),
                 has_math=has_math,
                 has_mermaid=has_mermaid,
                 auth_enabled=leafdocs._auth_enabled,

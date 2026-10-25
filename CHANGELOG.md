@@ -9,6 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Syntax highlighting. Fenced code blocks tagged with a language are highlighted on the server by Pygments through the `codehilite` extension, with class based output styled by `static/pygments.css` (Pygments style `github-dark`, loaded on reader pages only). Untagged fences and unknown languages render as plain code. `mermaid` fences skip highlighting and still render as diagrams.
+- Admonitions. `!!! TYPE "Title"` blocks with an indented body, for the types `note`, `tip`, `info`, `warning`, `danger` and `success`. Unknown types render as `note`.
+- TOC sidebar. Docs with three or more headings get a sticky "On this page" sidebar on screens at least 1180px wide, indented by heading level. An `h1` matching the doc title is left out. No JavaScript.
+- Sample doc `docs/highlighting-and-admonitions.md`.
+- `Pygments>=2.5.1` runtime dependency.
+
+### Changed
+
+- The sanitizer class allowlist is wider. `span` also keeps Pygments token classes, `div` also keeps `codehilite` and `admonition TYPE` for the six admonition types, and `p` keeps `admonition-title`. Any other `class` value is still removed.
+- Highlighted code blocks are now `<div class="codehilite"><pre><code>` with token spans, instead of `<pre><code class="language-*">`. Mermaid fences keep the old form.
+
 ## [0.3.0] - 2026-10-25
 
 ### Migrating from 0.2.x
