@@ -119,27 +119,35 @@ def _is_reserved(slug: str) -> bool:
     return slug in _RESERVED_SLUGS or slug.startswith("static/")
 
 
-def _is_inside(path: pathlib.Path, docs_dir: pathlib.Path) -> bool:
-    """True if path, with symlinks resolved, is still inside docs_dir."""
+def _path_status(path: pathlib.Path, docs_dir: pathlib.Path) -> int | None:
+    """
+    Check a lexical path under docs_dir before listing or serving it. Return
+    None if it is safe, 403 if its resolved path escapes docs_dir, and 404 if
+    its resolved path is elsewhere inside docs_dir (a symlinked file, a
+    symlinked directory or a loop), so each file has exactly one URL.
+    """
+    resolved = path.resolve()
     try:
-        path.resolve().relative_to(docs_dir)
+        resolved.relative_to(docs_dir)
     except ValueError:
-        return False
-    return True
+        return 403
+    if resolved != path:
+        return 404
+    return None
 
 
 def _discover_docs(docs_dir: pathlib.Path) -> list[dict]:
     """
     Recursively scan docs_dir for .md files. Return list of dicts with:
       slug, title, tags, path
-    Sorted alphabetically by title. Hidden paths, symlinks that escape
-    docs_dir, and reserved slugs are skipped.
+    Sorted alphabetically by title. Hidden paths, paths reached through a
+    symlink, and reserved slugs are skipped.
     """
     docs = []
     for md_file in sorted(docs_dir.rglob("*.md")):
         if _is_hidden(md_file.relative_to(docs_dir)):
             continue
-        if not md_file.is_file() or not _is_inside(md_file, docs_dir):
+        if not md_file.is_file() or _path_status(md_file, docs_dir) is not None:
             continue
         slug = _slug(md_file, docs_dir)
         if _is_reserved(slug):
@@ -234,8 +242,9 @@ class LeafDocs:
         image = self.docs_dir / rel
         if not image.is_file():
             abort(404)
-        if not _is_inside(image, self.docs_dir):
-            abort(403)
+        status = _path_status(image, self.docs_dir)
+        if status is not None:
+            abort(status)
         return send_file(image.resolve())
 
     # ------------------------------------------------------------------
@@ -306,9 +315,10 @@ class LeafDocs:
             if not md_file.is_file():
                 abort(404)
 
-            # Security: ensure resolved path is still inside docs_dir
-            if not _is_inside(md_file, leafdocs.docs_dir):
-                abort(403)
+            # Security: 403 if the resolved path escapes docs_dir, 404 if it is a symlink alias
+            status = _path_status(md_file, leafdocs.docs_dir)
+            if status is not None:
+                abort(status)
 
             post = frontmatter.load(str(md_file))
             title, tags = _doc_meta(post, md_file)

@@ -538,6 +538,68 @@ class TestNestedDocs:
         assert "/loop/" not in body
         assert "<summary>Loop</summary>" not in body
 
+    def test_symlinked_file_inside_docs_not_listed_and_404(self, tmp_path, monkeypatch):
+        _write(tmp_path, "real.md", "---\ntitle: Real Doc\n---\n\nReal body.")
+        (tmp_path / "alias.md").symlink_to(tmp_path / "real.md")
+        client = _nested_client(tmp_path, monkeypatch)
+
+        body = client.get("/").data.decode()
+        assert body.count(">Real Doc</a>") == 1
+        assert 'href="/alias"' not in body
+        r = client.get("/alias")
+        assert r.status_code == 404
+        assert b"Real body." not in r.data
+        assert client.get("/real").status_code == 200
+
+    def test_doc_through_symlinked_dir_returns_404(self, tmp_path, monkeypatch):
+        _write(tmp_path, "a/real/one.md", "Real one body.")
+        (tmp_path / "linked").symlink_to(tmp_path / "a" / "real", target_is_directory=True)
+        client = _nested_client(tmp_path, monkeypatch)
+
+        r = client.get("/linked/one")
+        assert r.status_code == 404
+        assert b"Real one body." not in r.data
+        assert client.get("/a/real/one").status_code == 200
+
+    def test_doc_through_symlink_loop_returns_404(self, tmp_path, monkeypatch):
+        _write(tmp_path, "one.md", "One body.")
+        _write(tmp_path, "sub/two.md", "Two body.")
+        (tmp_path / "loop").symlink_to(tmp_path, target_is_directory=True)
+        client = _nested_client(tmp_path, monkeypatch)
+
+        assert client.get("/").status_code == 200
+        for url in ("/loop/one", "/loop/sub/two", "/loop/loop/one"):
+            r = client.get(url)
+            assert r.status_code == 404, url
+        assert client.get("/one").status_code == 200
+
+    def test_symlinked_dir_escape_still_403(self, tmp_path, monkeypatch):
+        _write(tmp_path, "outside/secret.md", "Top secret.")
+        docs = tmp_path / "docs"
+        _write(docs, "visible.md", "x")
+        (docs / "out").symlink_to(tmp_path / "outside", target_is_directory=True)
+        client = _nested_client(docs, monkeypatch)
+
+        assert "/out/" not in client.get("/").data.decode()
+        r = client.get("/out/secret")
+        assert r.status_code == 403
+        assert b"Top secret." not in r.data
+
+    def test_symlinked_images(self, tmp_path, monkeypatch):
+        outside = _write(tmp_path, "outside/secret.png", PNG_BYTES)
+        docs = tmp_path / "docs"
+        _write(docs, "img/pic.png", PNG_BYTES)
+        (docs / "alias.png").symlink_to(docs / "img" / "pic.png")
+        (docs / "linked").symlink_to(docs / "img", target_is_directory=True)
+        (docs / "loop").symlink_to(docs, target_is_directory=True)
+        (docs / "escape.png").symlink_to(outside)
+        client = _nested_client(docs, monkeypatch)
+
+        assert client.get("/img/pic.png").status_code == 200
+        for url in ("/alias.png", "/linked/pic.png", "/loop/img/pic.png"):
+            assert client.get(url).status_code == 404, url
+        assert client.get("/escape.png").status_code == 403
+
     def test_reserved_top_level_slugs(self, tmp_path, monkeypatch):
         _write(tmp_path, "login.md", "---\ntitle: Top Login\n---\n")
         _write(tmp_path, "logout.md", "---\ntitle: Top Logout\n---\n")
