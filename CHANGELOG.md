@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-25
+
+### Migrating from 0.2.x
+
+- Inline math is `\(...\)` only. A single `$...$` is left as plain text, so docs that use `$x$` for inline math (common in other tools) need converting to `\(x\)`. Block math accepts `$$...$$` and `\[...\]`.
+- Raw HTML in docs is now sanitized. Scripts, event handler attributes, iframes, and other tags or attributes outside the allowlist are removed. Set `LEAFDOCS_ALLOW_HTML=true` to keep the old pass-through behavior, only if you are the sole author of all content.
+- The session cookie is `Secure` by default, so browsers only send it over HTTPS. If you serve over plain HTTP with pins enabled (for example raw-IP access), set `LEAFDOCS_COOKIE_SECURE=false`, or login will loop back to the login page.
+
 ### Security
 
 - Session cookie now sets `Secure` and `SameSite=Lax` in addition to `HttpOnly`. Previously only `HttpOnly` was set.
@@ -28,6 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - KaTeX and mermaid load only on pages that contain math or diagrams. Both are served from `/static/vendor/`, with no CDN or runtime network access. Versions, sources, and checksums are in `src/leafdocs/static/vendor/VERSIONS.md`, with each license next to its files.
 - `pymdown-extensions` runtime dependency.
 - Sample doc `docs/math-and-diagrams.md`.
+- Root `main.py` for local development. `python main.py` runs a dev server on `http://127.0.0.1:5000` with the `Secure` cookie flag off for plain HTTP. It is not included in the wheel or sdist.
 
 ### Changed
 
@@ -41,6 +50,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - `docs/authentication.md` claimed the session cookie was `secure` when it was not.
 - Symlinks inside `docs_dir` no longer create alias URLs. A symlinked file was listed as a duplicate of its target, and docs and images were readable through symlinked directories and loops (for example `/loop/loop/doc`). Discovery now skips, and the reader and image routes return 404 for, any path whose resolved location differs from its path under `docs_dir`. Symlinks that escape `docs_dir` still return 403.
+
+## [0.2.0] - 2026-07-26
+
+### Added
+
+- `DEPLOY.md`, a production deployment guide for AWS EC2 and GCP Compute Engine (Gunicorn, Nginx, systemd), covering raw-IP access and two custom domain options (direct DNS with Certbot, or Cloudflare Tunnel).
+- `SKILL.md`, a Claude Code skill that generates Markdown files with leafdocs frontmatter (`title`, `tags`).
+
+### Changed
+
+- README deployment section trimmed to a short summary that links to `DEPLOY.md`.
+
+### Fixed
+
+- `.DS_Store` files are now ignored by git.
 
 ## [0.1.0] - 2026-06-06
 
